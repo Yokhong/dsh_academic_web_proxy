@@ -1,0 +1,20 @@
+DSH Academic Web Proxy
+
+This is an independent implementation. It is not affiliated with or endorsed
+by Zotero, DeepSeek, institutions, or the academic publishers in its hostname list.
+
+Zotero Connector's public documentation and source informed the URL template
+behavior (%u, %h and %p) and redirect-loop prevention. No Zotero source code,
+icons, or screenshots are included in this package. Zotero Connector itself
+is licensed AGPL-3.0-or-later:
+https://github.com/zotero/zotero-connectors
+
+The 47 default hostnames are factual configuration entries for public academic
+websites. They are listed in src/default-hostnames.js. Institutional proxy
+templates are not included as defaults; both template fields start empty.
+
+The desktop compatibility adapter was independently written for the
+dsh-builtin-browser 0.3.1 bridge protocol and DSH Desktop 2.0.17 DOM markers.
+No DSH desktop code or browser binaries are bundled. Peer packages retain
+their respective licenses. DSH public project:
+https://github.com/deepseek-ai/deepseek-harness

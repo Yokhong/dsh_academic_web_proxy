@@ -1,0 +1,5 @@
+# The bare package row enables discovery of ./client and its Settings section.
+# This bundle neither replaces nor re-registers the browser provider.
+- insert:
+    - id: dsh-academic-web-proxy
+      name: dsh-academic-web-proxy

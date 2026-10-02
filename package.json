@@ -1,0 +1,77 @@
+{
+  "name": "dsh-academic-web-proxy",
+  "version": "0.1.0",
+  "description": "Academic URL proxy rules, independent hostnames, visible human handoff and real download-button workflow for DeepSeek Harness",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "docs",
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.0-rc.2 <0.3.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.0-rc.2 <0.3.0",
+    "dsh-builtin-browser": "0.3.x"
+  },
+  "peerDependenciesMeta": {
+    "dsh-builtin-browser": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "test": "node --test --test-isolation=none test/*.test.js",
+    "check": "node scripts/check.mjs",
+    "prepack": "npm run check && npm test"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "academic",
+    "ezproxy",
+    "browser"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yokhong/dsh_academic_web_proxy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Yokhong/dsh_academic_web_proxy/issues"
+  },
+  "homepage": "https://github.com/Yokhong/dsh_academic_web_proxy#readme"
+}
