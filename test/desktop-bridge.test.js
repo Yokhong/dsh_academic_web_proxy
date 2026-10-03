@@ -425,10 +425,23 @@ test('a hidden session is not replaced with another visible tab or a duplicated 
 
 test('does not claim presentation or bringToFront while the selected guest is covered', async t => {
   const f = await presentationFixture(t, { overlay: true });
+  const proofs = [];
+  const evaluate = f.shell.evaluate;
+  f.shell.evaluate = expression => {
+    const proof = evaluate(expression);
+    proofs.push(proof);
+    return proof;
+  };
   const result = await f.bridge.present(78);
   assert.equal(result.presented, false);
-  assert.match(result.reason, /exposed|visible/);
+  assert.deepEqual(f.shell.state.selected, [1]);
+  assert.ok(proofs.some(proof => proof.found === true && proof.presented === false &&
+    proof.reason === 'The selected guest is not visibly exposed in the desktop shell.'));
+  // The last visibility request may exhaust the presentation deadline before
+  // replying. Both outcomes must refuse presentation after observing the cover.
+  assert.match(result.reason, /exposed|visible|^Desktop bridge: request timed out$/);
   assert.deepEqual(f.shell.state.bring, []);
+  assert.equal(f.requests.some(request => request.method === 'Page.bringToFront'), false);
 });
 
 test('fails closed when shell markers are missing even if another tab is visible', async t => {
