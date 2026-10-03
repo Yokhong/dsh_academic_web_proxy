@@ -3,7 +3,7 @@ import { DEFAULT_HOSTNAMES } from './default-hostnames.js';
 const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers });
 
-export function createHandlers({ store, monitor, ready }) {
+export function createHandlers({ store, monitor, downloads, ready }) {
   const snapshot = () => ({ settings: store.get(), revision: store.revision, defaultHostnames: [...DEFAULT_HOSTNAMES], status: monitor.status() });
   const handle = fn => async request => {
     try { await ready; return await fn(request); }
@@ -22,6 +22,8 @@ export function createHandlers({ store, monitor, ready }) {
       if (!body || !Number.isSafeInteger(body.revision) || body.revision < 0) return json({ error: '缺少有效 revision，请重新载入配置。' }, 400);
       await store.save(body.settings, { revision: body.revision });
       monitor.configure();
+      downloads?.configure();
+      void Promise.resolve().then(() => downloads?.tick()).catch(() => {});
       void Promise.resolve().then(() => monitor.tick()).catch(() => {});
       return json(snapshot());
     }),

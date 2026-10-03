@@ -18,6 +18,34 @@ async function fixture(t) {
 }
 const login = 'https://login.example.edu/login?qurl=%u';
 
+test('version 0.1 settings migrate safely to disabled naming and an independent language', async context => {
+  const { filePath } = await fixture(context);
+  const legacy = { enabled: true, useDefaultHostnames: true, customHostnames: [], loginUrlScheme: login, proxiedUrlScheme: '' };
+  await writeFile(filePath, JSON.stringify({ version: 1, revision: 7, settings: legacy }));
+  const store = new SettingsStore({ filePath });
+  const migrated = await store.load();
+  assert.equal(migrated.language, 'zh-CN');
+  assert.equal(migrated.renameEnabled, false);
+  assert.equal(migrated.downloadDirectory, '');
+  assert.deepEqual(migrated.namingFields, ['title', 'year', 'platform']);
+  assert.equal(migrated.loginUrlScheme, login);
+  migrated.namingFields.push('author');
+  assert.deepEqual(store.get().namingFields, ['title', 'year', 'platform']);
+  for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+    const saved = await store.save({ ...store.get(), language, namingFields: ['platform', 'author', 'title'] });
+    assert.deepEqual(saved.settings.namingFields, ['title', 'author', 'platform']);
+    assert.equal((await new SettingsStore({ filePath }).load()).language, language);
+  }
+});
+
+test('new settings reject invalid language, naming fields and nonlocal paths', () => {
+  for (const input of [{ language: 'en' }, { renameEnabled: 'true' }, { namingFields: ['doi'] }, { namingFields: ['title', 'title'] }, { namingFields: null }, { downloadDirectory: 'relative/path' }, { downloadDirectory: 'https://example.org/downloads' }, { downloadDirectory: '//server/share' }, { downloadDirectory: 42 }]) {
+    assert.throws(() => validateSettings(input));
+  }
+  assert.deepEqual(validateSettings({ namingFields: [] }).namingFields, []);
+  assert.equal(validateSettings({ downloadDirectory: root }).downloadDirectory, root.trim());
+});
+
 test('new profiles leave both schemes empty and keep independent host selections', () => {
   assert.equal(DEFAULT_SETTINGS.loginUrlScheme, '');
   assert.equal(DEFAULT_SETTINGS.proxiedUrlScheme, '');

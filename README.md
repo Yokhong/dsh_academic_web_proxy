@@ -1,159 +1,98 @@
 # DSH Academic Web Proxy
 
-**简体中文** | [English](README.en.md)
+[English](README.en.md) · [使用指南 / GUIDE](docs/GUIDE.md) · [升级说明](docs/UPGRADING.md) · [隐私说明](docs/PRIVACY.md)
 
-为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 内置浏览器提供学术网站代理规则、机构登录页面交接和真实论文下载按钮操作。
+为 DeepSeek Harness 提供独立的学术网站代理设置，在原有共享浏览器中打开机构代理页面，并在需要登录或人机验证时交由用户在原标签页操作。v0.2.0 增加可选的论文 PDF 文件重命名，以及简体中文、繁体中文和美式英语设置界面。
 
-- GitHub 仓库：[Yokhong/dsh_academic_web_proxy](https://github.com/Yokhong/dsh_academic_web_proxy)
-- npm 包名：`dsh-academic-web-proxy`（仓库名称使用下划线，npm 包名使用连字符）
-- 许可证：[MIT](LICENSE)
+**重命名默认关闭，下载文件夹默认为空。** 开启后只处理明确选择的本地文件夹中符合条件的新 PDF：必须先观察到新出现的 `X.pdf.crdownload` 或 `X.pdf.part`，随后该临时文件消失、同名 `X.pdf` 稳定至少 2 秒，并通过 PDF 完整性和论文元数据匹配检查。这是文件系统轮询启发式，不是浏览器原生下载完成事件，也不保证每篇论文都能重命名。
 
-本插件为独立实现，参考 Zotero 的代理模板行为。它不包含文献保存、自动文件导入、错误上报、调试日志、翻译器、Google Docs 集成或高级配置功能。
+以下情况保留原文件名：已有文件、未观察到临时文件的快速下载、临时与最终文件名不对应的“另存为”、缺少或歧义元数据、加密或损坏 PDF、超过 64 MiB、子文件夹、符号链接、已有硬链接，以及不支持安全硬链接操作的文件系统。重命名后浏览器下载记录可能仍指向旧名称；请在下载文件夹中确认结果。
 
-> 自动跳转和原标签展示需要兼容的 DSH Desktop 浏览器桥接。自动跳转采用导航后轮询，不能保证在首次请求之前拦截。其他可用的浏览器后端可通过本插件工具打开代理地址，但不保证自动监测或自动展示。真实机构登录、验证码和最终文件保存需要在部署环境中验收，详见[兼容性说明](docs/COMPATIBILITY.md)。
+## 安装与升级
 
-## 功能
+运行要求：Node.js `>=22.19`、DSH `>=0.2.0-rc.2 <0.3.0`。现有浏览器适配目标仍为 `dsh-builtin-browser` `0.3.x`；原生 `4.1` 下载 API 仅做过接口审阅，未完成接入或实机验证。自动导航检测需要兼容的 DSH Desktop 侧栏桥接。其他可用浏览器后端可使用代理工具，但不保证自动检测、展示原标签或文件重命名。
 
-- **独立设置页**：DSH 设置中的“学术网页代理”，支持中英文界面。
-- **两个代理模板**：`Login URL Scheme` 和 `Proxied URL Scheme`，首次使用均为空白。编辑停顿约 600 ms 后自动保存，重启后保留。
-- **独立域名管理**：内置 47 个默认域名，可整组启停；自定义域名单独保存和启用。修改模板不会重置域名列表。
-- **精确域名匹配**：不自动匹配子域名或通配符；国际化域名会规范化。
-- **原页面交接**：发现登录或人机验证时保留同一个标签，在兼容桌面布局中尝试展开并确认其可见性。无法确认时返回待处理状态。
-- **真实下载操作**：从当前网页查找可见的 PDF/下载控件，通过原浏览器工具点击；候选有歧义时需要选择。
-- **配置与会话隔离**：使用当前 DSH profile，包含防循环、页面地址复核和原子配置保存；不注册替代浏览器 provider。
+从含 v0.2.0 的源码树构建安装包：
 
-## 运行要求
-
-| 部件 | 要求或适配范围 |
-| --- | --- |
-| Node.js | 22.19 或以上 |
-| DSH | 按 `0.2.0-rc.2` 接口适配；包声明范围为 `>=0.2.0-rc.2 <0.3.0` |
-| dsh-builtin-browser | 兼容适配针对 `0.3.1`；自动模式需要已有桥接 |
-| DSH Desktop | 桌面标签展示适配针对 `2.0.17` |
-
-安装前确认原浏览器可以正常打开网页。插件不安装浏览器，也不修补 DSH 应用文件。版本范围不表示其中每个版本都已完成实机验证。
-
-## 安装
-
-### 从源码生成安装包
-
-以下为 PowerShell 示例：
-
-```powershell
+```sh
 git clone https://github.com/Yokhong/dsh_academic_web_proxy.git
 cd dsh_academic_web_proxy
 npm ci --ignore-scripts
 npm run check
 npm test
-New-Item -ItemType Directory -Force dist | Out-Null
+mkdir dist
 npm pack --pack-destination dist
+dsh plugin --profile your-profile add ./dist/dsh-academic-web-proxy-0.2.0.tgz
 ```
 
-执行 CLI 安装前，退出使用目标 profile 的 DSH 窗口。把下面的 `your-profile` 替换成自己的配置名；包文件名随版本变化：
+将 `your-profile` 替换为目标 DSH profile 名称，并先核对 `package.json` 的版本；公开仓库、npm 与 GitHub Release 的发布是独立步骤，本地构建不代表它们已发布。仅在 npm 确实提供 `0.2.0` 时使用 `dsh plugin --profile your-profile add dsh-academic-web-proxy@0.2.0`。运行时包不包含开发测试脚本，需要重新打包时使用源码树。
 
-```powershell
-dsh plugin --profile your-profile add ./dist/dsh-academic-web-proxy-0.1.0.tgz
-```
+从 0.1 升级前备份当前 profile 的插件设置，见[升级说明](docs/UPGRADING.md)。原代理设置继续使用，新增字段填入默认值；新设置写入后，不要在没有备份的情况下直接回退旧版。
 
-也可通过 DSH 插件管理器安装本地 `.tgz` 包。重启 DSH 后进入 **设置 → 学术网页代理**。直接执行 `npm install` 只安装 npm 依赖；应使用 DSH 插件管理器激活本包的 bundle。
+## 首次设置
 
-### 使用发布包
+在 DSH Settings 中打开 **Academic Web Proxy**：
 
-如果 [Releases](https://github.com/Yokhong/dsh_academic_web_proxy/releases) 提供 `.tgz` 附件，可下载后按上述方式安装。
+1. 选择插件界面语言：简体中文 `zh-CN`（默认）、繁體中文 `zh-TW` 或美式英语 `en-US`。它独立于 DSH 的界面语言，切换立即显示并自动保存。
+2. 按机构文档填写 `Login URL Scheme` 或 `Proxied URL Scheme`。两项初始均为空；都为空时不会做代理重定向。
+3. 选择默认域名组，按需添加自定义域名。默认组有 47 个主机名；它与自定义列表分别保存，关闭默认组不会清空自定义项。
+4. 若需重命名，先让浏览器将文件保存到自己明确选择的本地下载文件夹，在插件中填入该文件夹的**绝对路径**，再开启 PDF 文件重命名。此设置只观察该文件夹，不会修改浏览器下载位置，也不支持网络共享、设备路径或子文件夹递归。
+5. 等待设置保存成功、重命名状态就绪，再在共享浏览器中打开论文摘要页并下载。设置约在最后一次修改 600 ms 后保存；保存失败时按界面提示处理。
 
-GitHub 源码与 npm 注册表分别发布。**只有 npm 注册表存在该包的目标版本后**，才能按包名安装：
+不要把机构模板、下载目录、登录信息或其他个人配置提交到仓库。
 
-```powershell
-dsh plugin --profile your-profile add dsh-academic-web-proxy
-```
+## 代理规则与人工操作
 
-维护者的发布流程见 [RELEASING.md](docs/RELEASING.md)。
+域名采用精确匹配，例如 `example.org` 不自动包含 `www.example.org`。自定义域名只填写主机名，不带协议、端口、路径或通配符。修改模板不会改写默认组和自定义列表。
 
-## 配置代理模板
-
-使用机构提供的模板。以下为虚构示例，程序不会自动填入：
+模板占位符：`%u` 为编码后的完整原始 URL，`%h` 为主机名（HTTPS 主机中的点转换为连字符），`%p` 为路径、查询和片段。以下只是虚构格式示例，不能直接作为机构配置：
 
 ```text
-Login URL Scheme:   https://login.example.edu/login?qurl=%u
-Proxied URL Scheme:  %h.proxy.example.edu/%p
+Login URL Scheme: https://login.example.edu/login?qurl=%u
+Proxied URL Scheme: https://%h.proxy.example.edu/%p
 ```
 
-| 占位符 | 含义 |
-| --- | --- |
-| `%u` | 用 `encodeURIComponent` 编码完整原始 URL，包括查询参数与片段 |
-| `%h` | 原始主机名；HTTPS 地址中的点号替换为连字符，HTTP 地址保留点号 |
-| `%p` | 去掉开头 `/` 的路径，加查询参数与片段 |
+配置了登录模板时优先使用它。规则包含已代理页面与重定向循环检查，不做 HTTP 降级，不支持非标准端口或页面子请求代理。Desktop 自动检测发生在导航之后，原站可能已收到首次请求；这不是网络请求拦截器。
 
-- 两个模板均为空时不跳转，即使总开关已开启。
-- 填写 `Login URL Scheme` 时优先使用登录模板，`Proxied URL Scheme` 用于识别代理地址。
-- 只填写 `Proxied URL Scheme` 时直接重写地址；省略协议时沿用原始协议。
-- 登录模板需要完整 HTTP(S) 地址和一个 `%u`；代理模板需要主机名中的一个 `%h`、机构固定域名后缀，以及路径中的一个 `%p`。
-- 不将 HTTPS 降级为 HTTP，不改写非标准端口地址，也不改写 iframe、图片或 XHR 等子请求。
+遇到登录或 CAPTCHA，保留并尽可能展示**同一个原标签页**，由用户完成操作，再检查页面状态。插件保留 0.1 的提示与人工接管流程，不填写密码、不解答或重试验证码，也不新增自动恢复操作。某些浏览器或布局需要用户手动展开侧栏、选择原标签。
 
-自定义域名只填写类似 `journals.example.org` 的主机名，不包含协议、端口、路径或通配符。关闭默认域名组后，自定义列表仍生效；例如 `example.org` 不会自动匹配 `www.example.org`。
+## PDF 文件名
 
-## 使用方式
+可选择以下五个字段，顺序固定，字段间使用下划线，扩展名为 `.pdf`：
 
-安装后可在 DSH 对话中要求：
+| 顺序 | 字段 | 内容 | 默认选择 |
+| --- | --- | --- | --- |
+| 1 | `title` | 论文标题 | 是 |
+| 2 | `author` | 第一位作者 | 否 |
+| 3 | `year` | 明确的发表年份 | 是 |
+| 4 | `venue` | 期刊或会议名称 | 否 |
+| 5 | `platform` | 可识别的平台，如 ASCE、Elsevier、Springer、MDPI | 是 |
 
-> 打开这篇论文，使用已配置的机构代理。需要登录时让我在原页面完成，然后点击页面上的 PDF 下载按钮。
+默认组合是 `title_year_platform.pdf`。例如虚构元数据可能生成 `A study of porous materials_2025_ASCE.pdf`。界面预览使用示例元数据，不表示当前下载已匹配或已重命名。
+
+缺少的所选字段会跳过；未选择任何字段或所有所选字段都没有值时保留原名。非法文件名字符会替换，过长名称会截短；重名时添加 ` (1)`、` (2)` 等后缀，不覆盖已有文件。文件保留在原文件夹，采用“创建独占硬链接、验证、移除原名称”的方式变更名称；不支持该操作时保留原文件。
+
+元数据来自已打开论文页面的 citation、Dublin Core、PRISM、ScholarlyArticle JSON-LD 等字段；缺失标题可尝试页面标题，缺失年份不会从 PDF 创建或修改日期推断。兼容 Desktop 桥接会在本 profile 已就绪的匹配学术页面采集，下载工具也会在点击真实下载控件前采集。
+
+用于重命名的文章元数据必须在临时下载开始被观察到之前已采集。最终文件须为不超过 64 MiB、未加密、可解析且具有有效终止 EOF 的 PDF；其 PDF Info 中的 DOI 或规范化后完全相同、长度至少 12 的标题须唯一对应一篇先前记录的文章。标题比较保留字母和数字，排除 Introduction、Bibliography 等通用标题；双方都有 DOI 时必须一致，非空 PDF 标题与文章标题矛盾时也不匹配。同一文章的相容记录可合并补全字段，冲突记录不能合并。缺失或歧义时保留原名，不凭文件名、点击顺序或 PDF 日期猜测。
+
+文件夹按约 500 ms 间隔轮询，文件系统通知可提前触发检查；这些间隔不等于完成证明。首次扫描会排除所有已有文件和已有临时下载的目标。缓存最多 100 条文章元数据，30 分钟未刷新会过期；待处理下载最多 100 条，30 分钟后过期。更改重命名设置或重启会重建观察基线，不补处理旧文件。详细边界见[使用指南](docs/GUIDE.md)和[兼容性说明](docs/COMPATIBILITY.md)。
+
+## 代理工具
 
 | 工具 | 用途 |
 | --- | --- |
-| `academic_proxy_status` | 查询配置状态、运行模式和待处理登录/验证页 |
-| `academic_proxy_open` | 按域名规则打开学术 URL，复用当前任务浏览器 |
-| `academic_proxy_check` | 检查当前页面是否需要登录或人机验证，并尝试展示原标签 |
-| `academic_proxy_download` | 查找并点击真实下载控件；`inspectOnly: true` 仅列出候选 |
+| `academic_proxy_status` | 查看代理、待人工处理页面和重命名状态；不返回模板值或下载目录绝对路径。 |
+| `academic_proxy_open` | 按当前配置在现有共享浏览器中打开学术 URL。 |
+| `academic_proxy_check` | 检查当前页面是否需要登录或人机验证。 |
+| `academic_proxy_download` | 检查并点击页面可见的真实 PDF/下载控件；`inspectOnly: true` 只列候选。 |
 
-登录和验证码由用户在原浏览器页面完成。隐藏的其他对话、被遮挡的页面或不支持的布局可能返回 `presented: false`，此时需手动选择对应对话并展开浏览器。
+多个同优先级候选需要明确选择返回的 `selector`；跨域 iframe 或 PDF 阅读器中的控件需要用原浏览器继续检查。工具不猜测或直接请求 PDF URL。`clicked` 只表示点击成功，`metadataCaptured` 只表示记录了元数据；两者都不等于文件已保存或重命名成功。请核对浏览器下载界面、实际文件和重命名结果，不为获得重命名状态反复触发下载。
 
-`clicked` 表示已点击控件，**不代表文件已保存**。网站可能先打开 PDF 阅读器；跨域 iframe、阅读器或特殊控件需要继续用原浏览器工具定位真实下载按钮，并确认最终文件保存。
+## 数据与验证
 
-## 配置存储与隐私
+代理模板、所选本地目录、语言和字段偏好保存在当前 profile 的运行时 `plugins/dsh-academic-web-proxy/settings.json`，不写入源码仓库。插件不采集凭证、不导出 Cookie、不发送遥测，也不把 PDF 或元数据上传到云端。近期重命名结果只在内存中保留最多 10 条文件名，不含绝对路径；完整说明见[隐私说明](docs/PRIVACY.md)。
 
-插件通过宿主 `profileContext` 服务定位当前配置目录，在其下保存：
+[验证报告](docs/VALIDATION.md)区分自动化结果与仍需实机完成的 SSO、CAPTCHA、浏览器保存和文件系统检查；CI 配置和接口审阅不代表这些场景已通过。[发布指南](docs/RELEASING.md)说明源码、安装包、npm 与市场条目的关系。市场提交草稿是独立的维护材料，只有公开源码已包含其描述的功能时才能提交。
 
-```text
-plugins/dsh-academic-web-proxy/settings.json
-```
-
-配置保存启用状态、默认组开关、自定义域名、两个模板和修订信息，不保存登录账号、密码或 Cookie。登录态由原浏览器管理；插件没有后台遥测，也不导出 Cookie。
-
-仓库不包含机构模板、运行配置或会话数据。不要把含凭证的模板或运行配置提交到仓库。同一配置目录应由一个 DSH host 管理。
-
-## 开发与验证
-
-```powershell
-npm ci --ignore-scripts
-npm run check
-npm test
-```
-
-项目使用原生 ESM，无需编译。测试使用 Node.js 内置测试器；默认域名测试使用仓库内的公开 fixture，无需额外个人文件。自动化检查覆盖设置保存、代理规则、profile 隔离、页面交接与下载调用；完整范围见 [VALIDATION.md](docs/VALIDATION.md)。
-
-| 路径 | 内容 |
-| --- | --- |
-| `src/` | 代理规则、存储、浏览器适配和工具 |
-| `client.js` | 独立设置页 |
-| `test/` | 自动化测试与公开 fixture |
-| `scripts/` | 检查与只读诊断脚本 |
-| `docs/` | 兼容性、验证和发布说明 |
-| `.github/workflows/ci.yml` | Node.js 22/24 与 Windows/Linux 的检查流程 |
-
-CI 配置执行测试与打包，不自动发布 npm 包。实际远程运行结果以仓库的 Actions 页面为准。
-
-## 卸载
-
-通过 DSH 插件管理器移除，或退出对应 profile 后执行：
-
-```powershell
-dsh plugin --profile your-profile remove dsh-academic-web-proxy
-```
-
-卸载时释放插件自己的定时器、路由和套接字，保留配置便于重新安装。若需要清除配置，删除上文所列的本插件配置文件。
-
-## 反馈与许可
-
-功能请求和一般问题可提交到 [Issues](https://github.com/Yokhong/dsh_academic_web_proxy/issues)。报告时使用虚构或脱敏的 URL，不附带凭证、Cookie 或个人配置。
-
-本项目采用 [MIT License](LICENSE)。第三方归属见 [NOTICE](NOTICE)。本项目与 Zotero、DeepSeek、学术机构或出版商没有隶属或背书关系。
+本项目使用 MIT 许可证，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。代理模板和依据书目元数据命名的交互参考了 Zotero 的公开文档；这是独立实现，不要求安装 Zotero。来源链接见 [GUIDE](docs/GUIDE.md#public-sources)。

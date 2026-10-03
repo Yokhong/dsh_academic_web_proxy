@@ -14,6 +14,17 @@ const config = overrides => ({
 
 const rules = overrides => new ProxyRules(config(overrides));
 
+test('original host metadata mapping uses only current configured unique hosts', () => {
+  const proxy = rules();
+  assert.equal(proxy.originalHostname('https://ascelibrary-org.proxy.example.edu/article'), 'ascelibrary.org');
+  assert.equal(proxy.originalHostname('https://onlinelibrary-wiley-com.proxy.example.edu/article'), 'onlinelibrary.wiley.com');
+  assert.equal(proxy.originalHostname('https://dl.acm.org/article'), 'dl.acm.org');
+  assert.equal(proxy.originalHostname('https://unknown.proxy.example.edu/article'), '');
+  assert.equal(proxy.originalHostname('https://dl-acm-org.proxy.example.edu.evil.test/article'), '');
+  assert.equal(proxy.originalHostname('https://user:password@dl-acm-org.proxy.example.edu/article'), '');
+  assert.equal(rules({ useDefaultHostnames: false, customHostnames: ['a-b.example', 'a.b.example'] }).originalHostname('https://a-b-example.proxy.example.edu/article'), '');
+});
+
 test('the default hostname group contains exactly 47 unique, canonical hosts', () => {
   assert.equal(DEFAULT_HOSTNAMES.length, 47);
   assert.equal(new Set(DEFAULT_HOSTNAMES).size, 47);

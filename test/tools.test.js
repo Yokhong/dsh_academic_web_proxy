@@ -10,7 +10,7 @@ const inspected = page => ({ value: { ok: true, value: typeof page === 'string' 
 const candidate = (selector = '#download-pdf', score = 9, label = 'Download article PDF') => ({ selector, score, label, frame: null });
 const found = (candidates, overrides = {}) => inspected({ url: ARTICLE_URL, candidates, framesPresent: false, ...overrides });
 
-function harness(responses = [], overrides = {}) {
+function harness(responses = [], overrides = {}, downloads) {
   const tools = new Map();
   const calls = [];
   const deferredContexts = [];
@@ -45,7 +45,7 @@ function harness(responses = [], overrides = {}) {
       },
     },
   };
-  registerAcademicTools(ctx, { monitor, settings: () => config, defineTool: definition => definition });
+  registerAcademicTools(ctx, { monitor, downloads, settings: () => config, defineTool: definition => definition });
   return {
     tools, calls, exec, controller, ctx, monitor, deferredContexts, queue,
     run: (name, args = {}) => tools.get(name).execute(args, exec),
@@ -62,6 +62,32 @@ function assertNestedContext(h) {
   }
   assert.equal(new Set(h.calls.map(call => call.callId)).size, h.calls.length);
 }
+
+test('naming captures page metadata before click without claiming completed or renamed', async () => {
+  const captured = [];
+  const downloads = { enabled: () => true, async tick() {}, remember: value => { captured.push(value); return true; }, status: () => ({ mode: 'ready', pending: 0 }) };
+  const metadata = { pageUrl: ARTICLE_URL, title: 'An informative article title', platform: 'ACM' };
+  const environment = harness([inspected(readyPage()), inspected(metadata), found([candidate()]), inspected(readyPage()), { value: { ok: true, value: ARTICLE_URL } }, { value: { clicked: true } }], {}, downloads);
+  const outcome = await environment.run('academic_proxy_download');
+  assert.equal(outcome.status, 'clicked');
+  assert.equal(outcome.metadataCaptured, true);
+  assert.equal(outcome.renaming.pending, 0);
+  assert.deepEqual(captured, [metadata]);
+  assert.match(environment.calls[1].arguments.script, /\("dl\.acm\.org"\)$/);
+  assert.equal(environment.calls.at(-1).name, 'browser_click');
+  assert.doesNotMatch(JSON.stringify(outcome), /"status":"(?:completed|renamed)"/);
+});
+
+test('naming capture cannot click after same-URL challenge or page change', async () => {
+  const downloads = { enabled: () => true, async tick() {}, remember: () => true, status: () => ({ mode: 'ready', pending: 0 }) };
+  const metadata = { pageUrl: ARTICLE_URL, title: 'An informative article title' };
+  const blocked = harness([inspected(readyPage()), inspected(metadata), found([candidate()]), inspected(readyPage({ kind: 'challenge' }))], {}, downloads);
+  assert.equal((await blocked.run('academic_proxy_download')).status, 'human-required');
+  assert.equal(blocked.calls.some(call => call.name === 'browser_click'), false);
+  const changed = harness([inspected(readyPage()), inspected({ ...metadata, pageUrl: 'https://example.org/changed' })], {}, downloads);
+  await assert.rejects(changed.run('academic_proxy_download'), /页面已改变/);
+  assert.equal(changed.calls.length, 2);
+});
 
 test('registration exposes four ordinary tools with serialized mutation behavior', () => {
   const h = harness();

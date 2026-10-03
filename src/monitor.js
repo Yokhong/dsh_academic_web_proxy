@@ -1,5 +1,6 @@
 import { ProxyRules, RedirectGuard } from './proxy.js';
 import { INSPECT_PAGE_SCRIPT } from './page-scripts.js';
+import { extractPaperMetadata } from './paper-metadata.js';
 
 const safeLocation = input => {
   try { const url = new URL(input); return `${url.origin}${url.pathname}`; } catch { return ''; }
@@ -7,7 +8,8 @@ const safeLocation = input => {
 
 /** Desktop bridge polling: no provider registration, request hooks or prototype patches. */
 export class ProxyMonitor {
-  constructor({ bridge, settings, intervalMs = 1000, now = Date.now }) {
+  constructor({ bridge, settings, downloads, intervalMs = 1000, now = Date.now }) {
+    this.downloads = downloads;
     this.bridge = bridge; this.settings = settings; this.intervalMs = intervalMs; this.now = now;
     this.rules = new ProxyRules(settings()); this.guard = new RedirectGuard({ now });
     this.tabs = new Map(); this.pending = new Map(); this.busy = 0; this.restricted = false;
@@ -107,6 +109,13 @@ export class ProxyMonitor {
       }
     } else if (page.readyState !== 'loading') {
       this.pending.delete(guest.id);
+      if (this.downloads?.enabled() && (this.rules.isRelated(page.url) || this.rules.originalHostname(page.url)) && (tracked.metadataUrl !== page.url || this.now() - (tracked.metadataAt ?? 0) > 10_000)) {
+        const hostname = this.rules.originalHostname(page.url);
+        const metadata = await this.bridge.evaluate(guest.id, `(${extractPaperMetadata.toString()})(${JSON.stringify(hostname)})`);
+        if (this.disposed || generation !== this.generation || this.busy || this.restricted || metadata?.pageUrl !== page.url) return;
+        this.downloads.remember(metadata);
+        tracked.metadataUrl = page.url; tracked.metadataAt = this.now();
+      }
     }
   }
   async trackCurrent(marker, page, source) {
@@ -134,5 +143,5 @@ export class ProxyMonitor {
     if (item) item.presented = result.presented === true;
     return result;
   }
-  status() { return { ...this.state, pending: [...this.pending.values()].map(item => ({ ...item })) }; }
+  status() { return { ...this.state, pending: [...this.pending.values()].map(item => ({ ...item })), ...(this.downloads ? { renaming: this.downloads.status() } : {}) }; }
 }

@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { normalizeHostname, validateSchemes } from './proxy.js';
+import { DEFAULT_NAMING_FIELDS, normalizeNamingFields } from './filename.js';
 
-export const DEFAULT_SETTINGS = Object.freeze({ enabled: true, useDefaultHostnames: true, customHostnames: Object.freeze([]), loginUrlScheme: '', proxiedUrlScheme: '' });
+export const DEFAULT_SETTINGS = Object.freeze({ enabled: true, useDefaultHostnames: true, customHostnames: Object.freeze([]), loginUrlScheme: '', proxiedUrlScheme: '', language: 'zh-CN', renameEnabled: false, namingFields: DEFAULT_NAMING_FIELDS, downloadDirectory: '' });
 const settingKeys = new Set(Object.keys(DEFAULT_SETTINGS));
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
-const cloneSettings = settings => ({ ...settings, customHostnames: [...settings.customHostnames] });
+const cloneSettings = settings => ({ ...settings, customHostnames: [...settings.customHostnames], namingFields: [...settings.namingFields] });
 function plainObject(value) {
   if (value === null || typeof value !== 'object') return false;
   const prototype = Object.getPrototypeOf(value);
@@ -42,8 +43,17 @@ export function validateSettings(input = {}) {
     if (text.length > 4096) throw new TypeError('代理方案长度不得超过 4096。');
     return text;
   });
+  const language = own(input, 'language') ? input.language : DEFAULT_SETTINGS.language;
+  if (!['zh-CN', 'zh-TW', 'en-US'].includes(language)) throw new TypeError('不支持的界面语言。');
+  const renameEnabled = own(input, 'renameEnabled') ? input.renameEnabled : DEFAULT_SETTINGS.renameEnabled;
+  if (typeof renameEnabled !== 'boolean') throw new TypeError('重命名开关必须为布尔值。');
+  const namingFields = normalizeNamingFields(own(input, 'namingFields') ? input.namingFields : DEFAULT_SETTINGS.namingFields);
+  const directory = own(input, 'downloadDirectory') ? input.downloadDirectory : DEFAULT_SETTINGS.downloadDirectory;
+  if (typeof directory !== 'string' || directory.length > 2048) throw new TypeError('下载文件夹必须为本地绝对路径。');
+  const downloadDirectory = directory.trim();
+  if (downloadDirectory && (!isAbsolute(downloadDirectory) || /[\u0000-\u001f]/.test(downloadDirectory) || /^[\\/]{2}/.test(downloadDirectory))) throw new TypeError('下载文件夹必须为本地绝对路径，不支持网络或设备路径。');
   validateSchemes(loginUrlScheme, proxiedUrlScheme);
-  return { enabled, useDefaultHostnames, customHostnames, loginUrlScheme, proxiedUrlScheme };
+  return { enabled, useDefaultHostnames, customHostnames, loginUrlScheme, proxiedUrlScheme, language, renameEnabled, namingFields, downloadDirectory };
 }
 function storeError(code, message, statusCode) {
   const error = new Error(message); error.code = code;

@@ -94,6 +94,22 @@ export class ProxyRules {
     if (this.loginOrigin === url.origin || this.isProxied(input)) return true;
     return Boolean(this.proxySuffix?.startsWith('.') && url.hostname.endsWith(this.proxySuffix));
   }
+  originalHostname(input) {
+    const url = httpUrl(input);
+    if (!url) return '';
+    if (this.hosts.has(url.hostname)) return url.hostname;
+    if (!this.settings.proxiedUrlScheme) return '';
+    const matches = new Set();
+    for (const hostname of this.hosts) {
+      for (const protocol of ['https:', 'http:']) {
+        const encoded = protocol === 'https:' ? hostname.replace(/\./g, '-') : hostname;
+        let target = this.settings.proxiedUrlScheme.replace('%h', encoded).replace('%p', 'article');
+        if (!/^https?:\/\//u.test(target)) target = `${protocol}//${target}`;
+        if (httpUrl(target)?.origin === url.origin) matches.add(hostname);
+      }
+    }
+    return matches.size === 1 ? [...matches][0] : '';
+  }
   decide(input) {
     const url = httpUrl(input);
     if (!url) return { action: 'skip', reason: 'non-http-or-credentials' };

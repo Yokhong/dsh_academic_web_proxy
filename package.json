@@ -1,7 +1,7 @@
 {
   "name": "dsh-academic-web-proxy",
-  "version": "0.1.0",
-  "description": "Academic URL proxy rules, independent hostnames, visible human handoff and real download-button workflow for DeepSeek Harness",
+  "version": "0.2.0",
+  "description": "Academic URL proxying and metadata-based paper download filenames with Simplified Chinese, Traditional Chinese and US English settings for DeepSeek Harness",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
@@ -27,8 +27,8 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-system-prompt": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0",
     "dsh-builtin-browser": "0.3.x"
   },
   "peerDependenciesMeta": {
@@ -46,7 +46,11 @@
     "deepseek-harness",
     "academic",
     "ezproxy",
-    "browser"
+    "browser",
+    "paper",
+    "pdf",
+    "filename",
+    "research"
   ],
   "license": "MIT",
   "publishConfig": {
@@ -73,5 +77,8 @@
   "bugs": {
     "url": "https://github.com/Yokhong/dsh_academic_web_proxy/issues"
   },
-  "homepage": "https://github.com/Yokhong/dsh_academic_web_proxy#readme"
+  "homepage": "https://github.com/Yokhong/dsh_academic_web_proxy#readme",
+  "dependencies": {
+    "pdf-lib": "1.17.1"
+  }
 }

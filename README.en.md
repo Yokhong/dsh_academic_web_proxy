@@ -1,159 +1,98 @@
 # DSH Academic Web Proxy
 
-[简体中文](README.md) | **English**
+[简体中文](README.md) · [Usage guide / GUIDE](docs/GUIDE.md) · [Upgrading](docs/UPGRADING.md) · [Privacy](docs/PRIVACY.md)
 
-Academic URL proxy rules, institutional sign-in handoff, and real download-button actions for the built-in browser in [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+Independent academic proxy settings for DeepSeek Harness. Open institutional proxy pages in the existing shared browser and hand login or human verification back to the user in the original tab. Version 0.2.0 adds optional paper PDF renaming and a settings interface in Simplified Chinese, Traditional Chinese, and US English.
 
-- Repository: [Yokhong/dsh_academic_web_proxy](https://github.com/Yokhong/dsh_academic_web_proxy)
-- npm package: `dsh-academic-web-proxy` (the repository uses underscores; the package uses hyphens)
-- License: [MIT](LICENSE)
+**Renaming is off by default, and the download folder starts empty.** It only considers new PDFs in an explicitly selected local folder: the monitor must observe a new `X.pdf.crdownload` or `X.pdf.part`, see that temporary file disappear, then find `X.pdf` stable for at least two seconds and pass PDF validation and article metadata matching. This is a filesystem polling heuristic, not a native browser download-completion event. It does not guarantee that every paper can be renamed.
 
-This is an independent implementation informed by Zotero's proxy-template behavior. It does not include reference saving, automatic file imports, error reporting, debug logging, translators, Google Docs integration, or advanced configuration.
+Original names are kept for existing files, fast downloads with no observed temporary file, Save As operations whose temporary and final names do not correspond, missing or ambiguous metadata, encrypted or damaged PDFs, files over 64 MiB, subfolders, symbolic links, existing hard links, and filesystems that do not support the required safe hard-link operation. After a rename, the browser's download history can still point to the old name; check the download folder for the result.
 
-> Automatic redirects and presentation of the original tab require a compatible DSH Desktop browser bridge. Redirects use polling after navigation and cannot intercept the first request. Plugin tools can open proxy URLs through other working browser backends, but automatic monitoring and presentation are not guaranteed there. Institutional sign-in, CAPTCHA handling, and completed file downloads require deployment testing. See [Compatibility](docs/COMPATIBILITY.md).
+## Install or upgrade
 
-## Features
+Requires Node.js `>=22.19` and DSH `>=0.2.0-rc.2 <0.3.0`. The browser adapter still targets `dsh-builtin-browser` `0.3.x`. Native `4.1` download APIs have only been reviewed; they are not integrated or verified in a live deployment. Automatic navigation detection requires a compatible DSH Desktop sidebar bridge. Other working browser backends can use the proxy tools, but automatic monitoring, original-tab presentation, and file renaming are not guaranteed.
 
-- **Independent settings section:** “Academic Web Proxy” in DSH Settings, with English and Chinese UI text.
-- **Two proxy templates:** `Login URL Scheme` and `Proxied URL Scheme` both start empty. Changes save automatically after about 600 ms of inactivity and persist across restarts.
-- **Separate hostname management:** 47 built-in defaults with one group toggle, plus an independently stored custom list. Changing templates does not reset either list.
-- **Exact hostname matching:** no implicit subdomain or wildcard matching; internationalized names are normalized.
-- **Original-page handoff:** sign-in and verification stay in the same tab. On compatible desktop layouts, the plugin attempts to reveal that tab and verify its visibility. Unconfirmed presentation remains pending.
-- **Real download actions:** discovers visible PDF/download controls on the current page and clicks through the existing browser tool. Ambiguous candidates require selection.
-- **Profile and session isolation:** uses the current DSH profile, prevents redirect loops, rechecks page URLs, and saves configuration atomically. It does not register a replacement browser provider.
+Build from a source tree containing v0.2.0:
 
-## Requirements
-
-| Component | Requirement or adapter target |
-| --- | --- |
-| Node.js | 22.19 or later |
-| DSH | Interfaces targeted at `0.2.0-rc.2`; declared package range `>=0.2.0-rc.2 <0.3.0` |
-| dsh-builtin-browser | Compatibility adapter targets `0.3.1`; automatic mode requires an existing bridge |
-| DSH Desktop | Tab-presentation adapter targets `2.0.17` |
-
-Confirm that the existing browser can open pages before installing. The plugin does not install a browser or patch DSH application files. A declared version range does not mean every version in that range has passed live testing.
-
-## Installation
-
-### Build an installable package from source
-
-PowerShell example:
-
-```powershell
+```sh
 git clone https://github.com/Yokhong/dsh_academic_web_proxy.git
 cd dsh_academic_web_proxy
 npm ci --ignore-scripts
 npm run check
 npm test
-New-Item -ItemType Directory -Force dist | Out-Null
+mkdir dist
 npm pack --pack-destination dist
+dsh plugin --profile your-profile add ./dist/dsh-academic-web-proxy-0.2.0.tgz
 ```
 
-Before installing through the CLI, close DSH windows using the target profile. Replace `your-profile` with your own profile name. Adjust the archive filename when the package version changes:
+Replace `your-profile` with the intended DSH profile name. Check the version in `package.json` first. Publishing the GitHub source, npm package, and GitHub Release are separate steps; a local build does not establish that any of them is published. Use `dsh plugin --profile your-profile add dsh-academic-web-proxy@0.2.0` only if that version is actually available on npm. The runtime package excludes development test scripts; use the source tree when rebuilding a package.
 
-```powershell
-dsh plugin --profile your-profile add ./dist/dsh-academic-web-proxy-0.1.0.tgz
-```
+Before upgrading from 0.1, back up the current profile's plugin settings as described in [Upgrading](docs/UPGRADING.md). Existing proxy settings are retained and missing new fields receive defaults. After saving new fields, do not directly downgrade without a backup.
 
-You can also install the local `.tgz` through DSH's plugin manager. Restart DSH, then open **Settings → Academic Web Proxy**. A direct `npm install` only installs npm dependencies; use the DSH plugin manager to activate this package's bundle.
+## First setup
 
-### Use a published package
+Open **Academic Web Proxy** in DSH Settings:
 
-If [Releases](https://github.com/Yokhong/dsh_academic_web_proxy/releases) provides a `.tgz` attachment, download it and install it as above.
+1. Choose Simplified Chinese `zh-CN` (default), Traditional Chinese `zh-TW`, or US English `en-US`. This controls only the plugin's settings interface, independently of the DSH language; the change appears immediately and saves automatically.
+2. Enter the institution's documented `Login URL Scheme` or `Proxied URL Scheme`. Both start empty. When both are empty, proxy redirection is inactive.
+3. Choose whether to use the default group and add custom hostnames as needed. The 47 default hostnames and custom list are stored independently; turning off the default group does not erase custom entries.
+4. To rename PDFs, first configure the browser to save into a local folder you explicitly choose. Enter that folder's **absolute path** in the plugin and turn on PDF renaming. This setting only observes the folder; it does not change the browser's download location. Network shares, device paths, and recursive subfolder scanning are not supported.
+5. Wait for a successful settings save and a ready renaming state, then open the article page and download through the shared browser. Changes save about 600 ms after the last edit; follow the UI message if a save fails.
 
-GitHub source and the npm registry are published separately. Install by package name **only after the desired version exists on npm**:
+Do not commit institutional templates, download folders, login information, or other personal configuration to the repository.
 
-```powershell
-dsh plugin --profile your-profile add dsh-academic-web-proxy
-```
+## Proxy rules and human handoff
 
-See [Releasing](docs/RELEASING.md) for maintainer instructions.
+Hostnames match exactly: `example.org` does not implicitly include `www.example.org`. Custom entries contain only a hostname, without a scheme, port, path, or wildcard. Changing templates preserves the default group and custom list.
 
-## Configure proxy templates
-
-Use templates supplied by your institution. These are fictional examples and are never filled in automatically:
+Template substitutions are `%u` for the encoded complete original URL, `%h` for the hostname (dots become hyphens for HTTPS hosts), and `%p` for the path, query, and fragment. These are fictional format examples, not working institutional settings:
 
 ```text
-Login URL Scheme:   https://login.example.edu/login?qurl=%u
-Proxied URL Scheme:  %h.proxy.example.edu/%p
+Login URL Scheme: https://login.example.edu/login?qurl=%u
+Proxied URL Scheme: https://%h.proxy.example.edu/%p
 ```
 
-| Placeholder | Meaning |
-| --- | --- |
-| `%u` | The entire original URL encoded with `encodeURIComponent`, including query and fragment |
-| `%h` | Original hostname; dots become hyphens for HTTPS URLs and remain dots for HTTP URLs |
-| `%p` | Path without its leading `/`, followed by the query and fragment |
+The login template takes priority when configured. Rules check already-proxied pages and redirect loops, do not downgrade HTTPS, and do not proxy nonstandard ports or page subrequests. Desktop monitoring acts after navigation, so the original site may receive the first request. It is not a network request interceptor.
 
-- With both templates empty, no redirect occurs, even if the master toggle is on.
-- When `Login URL Scheme` is set, it takes precedence for navigation. `Proxied URL Scheme` identifies proxy addresses.
-- When only `Proxied URL Scheme` is set, the URL is rewritten directly. Omitting the scheme preserves the original protocol.
-- A login template needs a complete HTTP(S) URL and one `%u`. A proxied template needs one `%h` in the hostname, a fixed institutional domain suffix, and one `%p` in the path.
-- HTTPS is never downgraded to HTTP. URLs with nonstandard ports are not rewritten, nor are iframe, image, or XHR subrequests.
+On login or CAPTCHA, the plugin keeps the **same original tab** and attempts to present it for the human. Complete the step there and check the page again. Version 0.2 retains the 0.1 prompt and handoff behavior; it does not enter credentials, solve or retry CAPTCHA, or add automatic resume actions. Some browser backends or layouts require the user to expand the sidebar or select the original tab manually.
 
-Custom entries must be hostnames such as `journals.example.org`, without protocols, ports, paths, or wildcards. Custom entries still apply when the default group is off. For example, `example.org` does not automatically match `www.example.org`.
+## PDF filenames
 
-## Usage
+Select from five fields in this fixed order. Components are joined with underscores and followed by `.pdf`:
 
-Ask DSH, for example:
+| Order | Field | Value | Selected by default |
+| --- | --- | --- | --- |
+| 1 | `title` | Article title | Yes |
+| 2 | `author` | First author | No |
+| 3 | `year` | Explicit publication year | Yes |
+| 4 | `venue` | Journal or conference | No |
+| 5 | `platform` | Recognized platform, such as ASCE, Elsevier, Springer, or MDPI | Yes |
 
-> Open this paper using my configured institutional proxy. Let me complete sign-in on the original page if needed, then click the page's PDF download button.
+The default is `title_year_platform.pdf`. Fictional example metadata could produce `A study of porous materials_2025_ASCE.pdf`. The settings preview uses example metadata; it does not indicate that a current download has matched or been renamed.
+
+Missing selected fields are omitted. Selecting no fields, or having no values for any selected field, keeps the original filename. Invalid filename characters are replaced and long names are shortened. Collisions receive ` (1)`, ` (2)`, and later suffixes without overwriting an existing file. Files stay in the same folder: the implementation creates an exclusive hard link, verifies it, then removes the original name. If the filesystem does not support that operation, the original file is kept.
+
+Article metadata comes from the open page's citation, Dublin Core, PRISM, and ScholarlyArticle JSON-LD fields. A page title can be used as a title fallback; missing publication years are not inferred from PDF creation or modification dates. A compatible Desktop bridge captures ready academic pages in the matching profile, and the download tool captures metadata before clicking a real download control.
+
+Article metadata must have been captured before the temporary download was first observed. The final file must be an unencrypted, parseable PDF no larger than 64 MiB, with a valid terminal EOF. Its PDF Info DOI or an exactly matching normalized title of at least 12 characters must identify one previously recorded article. Title comparison retains letters and numbers and excludes generic titles such as Introduction or Bibliography. When both records have a DOI, those DOIs must agree; a nonempty contradictory PDF title also rejects the match. Compatible records of the same article can fill missing fields, while conflicting records remain ambiguous. Missing or ambiguous identity keeps the original name; the plugin does not infer identity from filenames, click order, or PDF dates.
+
+The folder is polled about every 500 ms, with filesystem notifications prompting earlier checks. These timings are not proof of completion. The initial scan excludes all existing files and the targets of already-present temporary downloads. The in-memory cache holds at most 100 article records, expiring after 30 minutes without refresh; up to 100 pending downloads expire after 30 minutes. Changing renaming settings or restarting establishes a new baseline and does not backfill old files. See [GUIDE](docs/GUIDE.md) and [Compatibility](docs/COMPATIBILITY.md) for the full boundaries.
+
+## Proxy tools
 
 | Tool | Purpose |
 | --- | --- |
-| `academic_proxy_status` | Report configuration state, operating mode, and pending sign-in or verification pages |
-| `academic_proxy_open` | Open an academic URL according to hostname rules in the current task's browser |
-| `academic_proxy_check` | Check the current page for sign-in or human verification and attempt to reveal the original tab |
-| `academic_proxy_download` | Find and click real download controls; `inspectOnly: true` only lists candidates |
+| `academic_proxy_status` | Read proxy, human-action, and renaming state without exposing template values or the absolute download folder. |
+| `academic_proxy_open` | Open an academic URL through current rules in the existing shared browser. |
+| `academic_proxy_check` | Check whether the current page requires login or human verification. |
+| `academic_proxy_download` | Inspect and click real visible PDF/download controls; `inspectOnly: true` lists candidates only. |
 
-Complete sign-in and CAPTCHA steps yourself on the original browser page. Hidden conversations, covered pages, or unsupported layouts may return `presented: false`. Select the corresponding conversation and expand its browser manually in that case.
+Equally ranked candidates require an explicit choice using a returned `selector`. Controls inside cross-origin frames or PDF viewers require further inspection in the original browser. The tool does not guess or directly fetch PDF URLs. `clicked` confirms only the click; `metadataCaptured` confirms only a cached metadata record. Neither means the file was saved or renamed. Check the browser's download UI, the actual file, and the rename result; do not repeatedly trigger downloads to obtain a rename status.
 
-`clicked` means a control was clicked; **it does not mean a file was saved**. A site may first open a PDF viewer. Cross-origin iframes, viewers, and unusual controls may require further interaction with the original browser tools to locate the actual download control and confirm file saving.
+## Data and validation
 
-## Configuration and privacy
+Proxy templates, the chosen local folder, language, and filename preferences live in the current profile's runtime `plugins/dsh-academic-web-proxy/settings.json`, not in the source repository. The plugin does not collect credentials, export cookies, send telemetry, or upload PDFs or metadata to cloud services. Recent renaming results keep at most ten basenames in memory without absolute paths. See [Privacy](docs/PRIVACY.md).
 
-The plugin resolves the active configuration directory through the host's `profileContext` service and stores its settings at:
+[Validation](docs/VALIDATION.md) separates automated results from deployment checks still needed for institutional SSO, CAPTCHA, browser saving, and filesystem behavior. CI configuration and API review do not establish that those live scenarios passed. [Releasing](docs/RELEASING.md) explains source, tarball, npm, and catalog publication. The market submission draft is separate maintainer material and must be submitted only after public source implements its stated features.
 
-```text
-plugins/dsh-academic-web-proxy/settings.json
-```
-
-Settings contain the enabled state, default-group toggle, custom hostnames, two templates, and revision information. They do not store login usernames, passwords, or cookies. The existing browser manages sign-in sessions. The plugin has no background telemetry and does not export cookies.
-
-The repository contains no institutional templates, runtime configuration, or session data. Do not commit credential-bearing templates or runtime configuration. Use one DSH host per configuration directory.
-
-## Development and validation
-
-```powershell
-npm ci --ignore-scripts
-npm run check
-npm test
-```
-
-The project uses native ESM and requires no compilation. Tests use Node.js's built-in test runner. Default-hostname checks use a public fixture included in the repository and require no additional personal files. Automated checks cover settings persistence, proxy rules, profile isolation, page handoff, and download calls. See [Validation](docs/VALIDATION.md) for the scope.
-
-| Path | Contents |
-| --- | --- |
-| `src/` | Proxy rules, storage, browser adapter, and tools |
-| `client.js` | Independent settings UI |
-| `test/` | Automated tests and public fixtures |
-| `scripts/` | Checks and a read-only diagnostic script |
-| `docs/` | Compatibility, validation, and release documentation |
-| `.github/workflows/ci.yml` | Checks for Node.js 22/24 on Windows/Linux |
-
-CI runs tests and packaging; it does not publish to npm. Consult the repository's Actions page for actual remote run results.
-
-## Uninstallation
-
-Remove the plugin through DSH's plugin manager, or close the relevant profile and run:
-
-```powershell
-dsh plugin --profile your-profile remove dsh-academic-web-proxy
-```
-
-Disposal releases the plugin's timers, routes, and sockets. Configuration is retained for reinstallation. To clear it, delete the plugin settings file described above.
-
-## Feedback and license
-
-Use [Issues](https://github.com/Yokhong/dsh_academic_web_proxy/issues) for feature requests and general problems. Include fictional or redacted URLs; exclude credentials, cookies, and personal configuration.
-
-Licensed under the [MIT License](LICENSE). See [NOTICE](NOTICE) for third-party attribution. This project is not affiliated with or endorsed by Zotero, DeepSeek, institutions, or publishers.
+Licensed under MIT; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Proxy templates and bibliographic filename behavior were informed by Zotero's public documentation. This is an independent implementation and does not require Zotero. References are linked in [GUIDE](docs/GUIDE.md#public-sources).

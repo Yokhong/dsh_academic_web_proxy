@@ -67,6 +67,29 @@ function setup(guests = [], overrides = {}, options = {}) {
   return { bridge, monitor, updateSettings: next => { config = settings(next); monitor.configure(); } };
 }
 
+test('background metadata uses the current proxy host and never blocked pages', async () => {
+  const captured = [];
+  const downloads = { enabled: () => true, remember: metadata => captured.push(metadata), status: () => ({ mode: 'ready' }) };
+  const { bridge, monitor } = setup([guest(1, 'https://ascelibrary.org/article')], {}, { downloads });
+  bridge.evaluateImpl = async (id, script) => {
+    const current = bridge.find(id);
+    if (script === 'location.href') return current.url;
+    if (script === INSPECT_PAGE_SCRIPT) return { url: current.url, kind: 'ready', readyState: 'complete', ...bridge.pages.get(id) };
+    const hostname = JSON.parse(script.slice(script.lastIndexOf(')(') + 2, -1));
+    return { pageUrl: current.url, title: 'An informative scholarly article', platform: hostname };
+  };
+  await monitor.tick(); await monitor.tick();
+  assert.equal(captured[0].platform, 'ascelibrary.org');
+  bridge.find(1).url = 'https://onlinelibrary-wiley-com.proxy.example.edu/article';
+  await monitor.tick();
+  assert.equal(captured[1].platform, 'onlinelibrary.wiley.com');
+  for (const kind of ['login', 'challenge']) {
+    bridge.setPage(1, { url: `https://onlinelibrary-wiley-com.proxy.example.edu/${kind}`, kind });
+    await monitor.tick();
+  }
+  assert.equal(captured.length, 2);
+});
+
 test('automatic redirects reach every matching live webview, including inactive tabs, and no other guests', async () => {
   const { bridge, monitor } = setup([
     guest(1, 'https://dl.acm.org/doi/paper'),

@@ -6,7 +6,8 @@ import { DEFAULT_HOSTNAMES } from '../src/default-hostnames.js';
 
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 const plain = value => JSON.parse(JSON.stringify(value));
-const defaults = () => ({ enabled: true, useDefaultHostnames: true, customHostnames: [], loginUrlScheme: '', proxiedUrlScheme: '' });
+const legacyDefaults = () => ({ enabled: true, useDefaultHostnames: true, customHostnames: [], loginUrlScheme: '', proxiedUrlScheme: '' });
+const defaults = () => ({ ...legacyDefaults(), language: 'zh-CN', renameEnabled: false, namingFields: ['title', 'year', 'platform'], downloadDirectory: '' });
 const envelope = (settings = defaults(), revision = 0, status = { mode: 'unconfigured' }) => ({ settings, revision, status, defaultHostnames: [...DEFAULT_HOSTNAMES] });
 const response = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data });
 const defer = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -103,7 +104,7 @@ function render(loaded, controller, language = 'zh') {
   return loaded.registrations[0].component({ controller, t: (key, vars) => dictionary[key].replace(/\{(\w+)\}/g, (_, name) => String(vars?.[name] ?? '')) });
 }
 
-test('registers an independent DSH settings section, both locales and disposable effects', () => {
+test('registers an independent DSH settings section, three complete locales and disposable effects', () => {
   const loaded = bundle();
   assert.equal(loaded.loaderId, 'dsh-academic-web-proxy');
   assert.equal(loaded.exports.name, 'dsh-academic-web-proxy');
@@ -117,6 +118,12 @@ test('registers an independent DSH settings section, both locales and disposable
   assert.equal(options.locale, 'settings.dsh-academic-web-proxy');
   assert.ok(options.inject().controller);
   assert.equal(loaded.dictionaries().en.nav, 'Academic Web Proxy');
+  assert.equal(loaded.dictionaries()['zh-TW'].nav, '學術網頁代理');
+  for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+    const dictionary = loaded.dictionaries()[language];
+    assert.deepEqual(Object.keys(dictionary).sort(), Object.keys(loaded.dictionaries().zh).sort());
+    assert.ok(Object.values(dictionary).every(value => typeof value === 'string' && value.trim()), language);
+  }
   assert.deepEqual(Object.keys(loaded.dictionaries().zh).sort(), Object.keys(loaded.dictionaries().en).sort());
   assert.ok(loaded.events.has('beforeunload'));
   options.inject().controller.setHostnameInput('unsaved.example.org');
@@ -128,6 +135,197 @@ test('registers an independent DSH settings section, both locales and disposable
   loaded.dispose();
   assert.deepEqual(loaded.lifecycle, { localeDisposed: 1, slotDisposed: 1 });
   assert.equal(loaded.events.size, 0);
+});
+
+for (const [language, title, filenameLabel, directoryLabel, mode, pendingLogin, pendingChallenge] of [
+  ['zh-CN', '学术网页代理', '文件名字段', '本地下载文件夹（绝对路径）', '桌面浏览器监测已启用', '请在对应原页面完成机构登录。', '请在对应原页面完成人机验证；自动操作已暂停。'],
+  ['zh-TW', '學術網頁代理', '檔名欄位', '本機下載資料夾（絕對路徑）', '桌面瀏覽器監測已啟用', '請在對應原頁面完成機構登入。', '請在對應原頁面完成人機驗證；自動操作已暫停。'],
+  ['en-US', 'Academic Web Proxy', 'Filename fields', 'Local download folder (absolute path)', 'Desktop browser monitoring active', 'Complete institutional login on the corresponding original page.', 'Complete human verification on the corresponding original page. Automatic actions are paused.'],
+]) test(`renders the whole settings page in persisted ${language}, independently of the DSH locale`, async t => {
+  const status = { mode: 'desktop-bridge', message: '不要显示此服务端中文消息', pending: [
+    { id: 1, kind: 'login', message: '不要显示服务端登录文本' },
+    { id: 2, kind: 'challenge', message: '不要显示服务端验证文本', presented: false },
+  ] };
+  const env = setup(() => response(envelope({ ...defaults(), language }, 0, status)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  const tree = render(env.loaded, env.controller, language === 'en-US' ? 'zh' : 'en');
+  const content = text(tree);
+  assert.equal(tree.props.lang, language);
+  for (const expected of [title, filenameLabel, directoryLabel, mode, pendingLogin, pendingChallenge]) assert.ok(content.includes(expected), expected);
+  assert.doesNotMatch(content, /不要显示|desktop-bridge/);
+  if (language === 'en-US') assert.doesNotMatch(content, /[\u3400-\u9fff]/u);
+  const selector = nodes(tree).find(node => node.type === 'select');
+  assert.equal(selector.props.value, language);
+  assert.deepEqual(plain(nodes(selector).filter(node => node.type === 'option').map(node => node.props.value)), ['zh-CN', 'zh-TW', 'en-US']);
+  const dictionary = env.loaded.dictionaries()[language];
+  for (const key of ['languageHint', 'renameHint', 'downloadDirectoryHint', 'namingHint', 'namingMissing', 'namingSafety', 'presentUnconfirmed']) {
+    assert.ok(content.includes(dictionary[key]), key);
+  }
+  for (const input of nodes(tree).filter(node => ['input', 'select'].includes(node.type))) {
+    assert.ok(nodes(tree).some(node => node.type === 'label' && node.props.htmlFor === input.props.id), input.props.id);
+  }
+  const directory = nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-downloadDirectory'));
+  assert.equal(directory.props.value, '');
+  assert.equal(directory.props.placeholder, undefined);
+  const naming = nodes(tree).filter(node => node.type === 'input' && /-naming-(title|author|year|venue|platform)$/.test(node.props.id));
+  assert.equal(naming.length, 5);
+  assert.deepEqual(plain(naming.map(node => node.props.checked)), [true, false, true, false, true]);
+  assert.equal(nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-renameEnabled')).props.checked, false);
+});
+
+test('language selection applies before autosave and reloads with opt-in, fields and the explicit folder', async t => {
+  let persisted = defaults();
+  let revision = 4;
+  const handler = call => {
+    if (call.body) { persisted = call.body.settings; revision++; }
+    return response(envelope(persisted, revision));
+  };
+  const env = setup(handler);
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  const select = () => nodes(render(env.loaded, env.controller)).find(node => node.type === 'select');
+  select().props.onChange({ target: { value: 'zh-TW' } });
+  assert.match(text(render(env.loaded, env.controller)), /等待自動儲存/);
+  assert.equal(select().props.value, 'zh-TW');
+  assert.equal(saves(env.calls).length, 0);
+  select().props.onChange({ target: { value: 'en-US' } });
+  let tree = render(env.loaded, env.controller);
+  assert.match(text(tree), /Changes waiting to save/);
+  assert.doesNotMatch(text(tree), /[\u3400-\u9fff]/u);
+  nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-renameEnabled')).props.onChange({ target: { checked: true } });
+  tree = render(env.loaded, env.controller);
+  nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-naming-author')).props.onChange({ target: { checked: true } });
+  tree = render(env.loaded, env.controller);
+  nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-naming-title')).props.onChange({ target: { checked: false } });
+  tree = render(env.loaded, env.controller);
+  const downloadDirectory = 'C:\\Users\\Reader\\Downloads';
+  nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-downloadDirectory')).props.onChange({ target: { value: downloadDirectory } });
+  assert.equal(text(nodes(render(env.loaded, env.controller)).find(node => node.type === 'output')), 'Ming Zhang_2025_Example.org.pdf');
+  await env.time.advance(599);
+  assert.equal(saves(env.calls).length, 0);
+  await env.time.advance(1);
+  assert.deepEqual(saves(env.calls)[0].body, { revision: 4, settings: { ...defaults(), language: 'en-US', renameEnabled: true, namingFields: ['author', 'year', 'platform'], downloadDirectory } });
+  assert.equal(env.controller.hasUnsaved(), false);
+  const reopened = setup(handler);
+  t.after(() => { reopened.controller.dispose(); reopened.loaded.dispose(); });
+  await reopened.controller.load();
+  tree = render(reopened.loaded, reopened.controller, 'zh');
+  assert.equal(tree.props.lang, 'en-US');
+  assert.equal(nodes(tree).find(node => node.type === 'select').props.value, 'en-US');
+  assert.equal(nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-renameEnabled')).props.checked, true);
+  assert.equal(nodes(tree).find(node => node.type === 'input' && node.props.id.endsWith('-downloadDirectory')).props.value, downloadDirectory);
+  assert.deepEqual(plain(reopened.controller.getState().settings.namingFields), ['author', 'year', 'platform']);
+});
+
+test('legacy envelopes default only missing new keys and do not trigger an unsolicited save', async t => {
+  const env = setup(call => response(envelope(call.body?.settings || legacyDefaults(), call.body ? 1 : 0)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  assert.deepEqual(plain(env.controller.getState().settings), defaults());
+  const tree = render(env.loaded, env.controller, 'en');
+  assert.equal(tree.props.lang, 'zh-CN');
+  assert.match(text(tree), /学术网页代理/);
+  await env.time.advance(5000);
+  assert.equal(saves(env.calls).length, 0);
+  env.controller.edit('enabled', false);
+  await env.time.advance(600);
+  assert.deepEqual(saves(env.calls)[0].body.settings, { ...defaults(), enabled: false });
+  const partial = setup(() => response(envelope({ ...legacyDefaults(), language: 'zh-TW', namingFields: [] })));
+  t.after(() => partial.controller.dispose());
+  await partial.controller.load();
+  assert.deepEqual(plain(partial.controller.getState().settings), { ...defaults(), language: 'zh-TW', namingFields: [] });
+});
+
+test('invalid persisted language, opt-in, folder and naming fields reject the envelope', async t => {
+  const invalid = [
+    ...['en', 'zh', 'en-us', 'zh-cn', 'fr-FR', '', null, 3].map(value => ['language', value]),
+    ...[null, 'title', ['unknown'], ['title', 'title'], ['year', 4], ['__proto__']].map(value => ['namingFields', value]),
+    ...[null, 'true', 0].map(value => ['renameEnabled', value]),
+    ...[null, 3, []].map(value => ['downloadDirectory', value]),
+  ];
+  for (const [field, value] of invalid) {
+    const env = setup(() => response(envelope({ ...defaults(), [field]: value })));
+    t.after(() => env.controller.dispose());
+    await env.controller.load();
+    assert.equal(env.controller.getState().settings, null, `${field}: ${JSON.stringify(value)}`);
+    assert.equal(env.controller.getState().loadError.key, 'invalidResponse');
+    assert.equal(saves(env.calls).length, 0);
+  }
+});
+
+test('invalid local language and naming values leave the draft and save queue unchanged', async t => {
+  const env = setup(() => response(envelope()));
+  t.after(() => env.controller.dispose());
+  await env.controller.load();
+  const initial = env.controller.getState();
+  for (const [field, values] of [
+    ['language', ['en', 'zh', 'en-us', 'fr-FR', '', null, undefined, 3]],
+    ['namingFields', [null, undefined, 'title', ['unknown'], ['title', 'title'], ['title', null], ['__proto__'], new Array(1)]],
+    ['renameEnabled', ['yes', 1, undefined, null]],
+    ['downloadDirectory', [null, 3, []]],
+  ]) for (const value of values) {
+    assert.equal(env.controller.edit(field, value), false, field);
+    assert.equal(env.controller.getState(), initial, field);
+  }
+  await env.time.advance(1000);
+  assert.equal(saves(env.calls).length, 0);
+});
+
+test('filename checkboxes use canonical order and update the example preview independently of opt-in', async t => {
+  const env = setup(call => response(envelope(call.body?.settings || { ...defaults(), language: 'en-US' }, call.body ? 1 : 0)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  const tree = () => render(env.loaded, env.controller);
+  const toggleField = (field, checked) => nodes(tree()).find(node => node.type === 'input' && node.props.id.endsWith('-naming-' + field)).props.onChange({ target: { checked } });
+  const labels = nodes(tree()).filter(node => node.type === 'label' && /-naming-(title|author|year|venue|platform)$/.test(node.props.htmlFor));
+  assert.deepEqual(plain(labels.map(node => text(node).trim())), ['Paper title', 'Author (first author)', 'Publication year', 'Journal or conference', 'Platform']);
+  assert.equal(text(nodes(tree()).find(node => node.type === 'output')), 'Academic Web Proxy Research_2025_Example.org.pdf');
+  toggleField('venue', true);
+  toggleField('author', true);
+  assert.deepEqual(plain(env.controller.getState().settings.namingFields), ['title', 'author', 'year', 'venue', 'platform']);
+  assert.equal(text(nodes(tree()).find(node => node.type === 'output')), 'Academic Web Proxy Research_Ming Zhang_2025_Example Research Journal_Example.org.pdf');
+  assert.equal(env.controller.getState().settings.renameEnabled, false);
+  for (const field of ['title', 'author', 'year', 'venue', 'platform']) toggleField(field, false);
+  assert.equal(text(nodes(tree()).find(node => node.type === 'output')), 'Original filename is kept');
+  assert.match(text(tree()), /Missing fields are skipped/);
+  assert.match(text(tree()), /Invalid filename characters are replaced/);
+  assert.match(text(tree()), /backend numbers duplicate filenames automatically/);
+  await env.time.advance(600);
+  assert.deepEqual(saves(env.calls)[0].body.settings.namingFields, []);
+  assert.equal(saves(env.calls)[0].body.settings.renameEnabled, false);
+});
+
+test('preview skips missing values, replaces filename characters and keeps the original when empty', () => {
+  const { filenamePreview, normalizeNamingFields } = bundle().exports;
+  assert.deepEqual(plain(normalizeNamingFields(['platform', 'venue', 'year', 'author', 'title'])), ['title', 'author', 'year', 'venue', 'platform']);
+  assert.equal(normalizeNamingFields(['title', 'title']), null);
+  assert.equal(normalizeNamingFields(['title', 'filename']), null);
+  assert.equal(filenamePreview({ title: ' A: title/part? ', author: '', year: 2024, platform: 'Example.org' }, ['platform', 'author', 'title', 'year']), 'A_ title_part_2024_Example.org.pdf');
+  assert.equal(filenamePreview({ title: 'Missing author' }, ['author'], 'download-17.pdf'), 'download-17.pdf');
+  assert.equal(filenamePreview({ title: '   ' }, ['title'], 'download-18.pdf'), 'download-18.pdf');
+  assert.equal(filenamePreview({ title: 'A title' }, [], 'download-19.pdf'), 'download-19.pdf');
+});
+
+test('loaded, edited and submitted naming arrays are cloned and canonically ordered', async t => {
+  const original = { ...defaults(), namingFields: ['platform', 'title', 'year'] };
+  const env = setup(call => response(envelope(call.body?.settings || original, call.body ? 1 : 0)));
+  t.after(() => env.controller.dispose());
+  await env.controller.load();
+  assert.deepEqual(plain(env.controller.getState().settings.namingFields), ['title', 'year', 'platform']);
+  original.namingFields.push('venue');
+  original.customHostnames.push('external.example.org');
+  assert.deepEqual(plain(env.controller.getState().settings.namingFields), ['title', 'year', 'platform']);
+  assert.deepEqual(plain(env.controller.getState().settings.customHostnames), []);
+  const fields = ['platform', 'author', 'title'];
+  env.controller.edit('namingFields', fields);
+  fields.push('venue');
+  assert.deepEqual(plain(env.controller.getState().settings.namingFields), ['title', 'author', 'platform']);
+  await env.time.advance(600);
+  assert.deepEqual(saves(env.calls)[0].body.settings.namingFields, ['title', 'author', 'platform']);
+  saves(env.calls)[0].body.settings.namingFields.push('year');
+  assert.deepEqual(plain(env.controller.getState().settings.namingFields), ['title', 'author', 'platform']);
+  assert.equal(env.controller.hasUnsaved(), false);
 });
 
 test('hostname input normalizes host-only strings and rejects URL/path/port/wildcard syntax', () => {
@@ -156,7 +354,8 @@ test('loads the entire settings contract and displays 47 defaults and blank sche
   assert.match(text(tree), /HTTPS 主机名中的点号会替换为连字符/);
   assert.match(text(tree), /%p：原始路径、查询参数和片段/);
   for (const input of inputs) assert.ok(nodes(tree).some(node => node.type === 'label' && node.props.htmlFor === input.props.id));
-  assert.match(text(render(env.loaded, env.controller, 'en')), /Academic Web Proxy/);
+  env.controller.edit('language', 'en-US');
+  assert.match(text(render(env.loaded, env.controller, 'zh')), /Academic Web Proxy/);
   assert.equal(env.calls[0].url, 'api/dsh-academic-web-proxy/settings');
   assert.equal(env.calls[0].options.credentials, 'same-origin');
   assert.equal(env.calls[0].options.mode, 'same-origin');
@@ -327,6 +526,66 @@ test('custom domain edits work independently when defaults and global proxy are 
   assert.deepEqual(plain(env.controller.getState().settings.customHostnames), []);
 });
 
+test('all known proxy runtime modes use the selected local dictionary instead of server messages', async t => {
+  const modes = { starting: 'modeStarting', restricted: 'modeRestricted', unconfigured: 'modeUnconfigured', disabled: 'modeDisabled', unavailable: 'modeUnavailable', 'desktop-bridge': 'modeDesktop' };
+  let currentStatus = { mode: 'starting', message: '服务器中文状态原文' };
+  const env = setup(call => response(call.url.endsWith('/status') ? currentStatus : envelope(defaults(), 0, currentStatus)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  render(env.loaded, env.controller);
+  for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+    env.controller.edit('language', language);
+    for (const [mode, key] of Object.entries(modes)) {
+      currentStatus = { mode, message: '服务器中文状态原文' };
+      await env.controller.refreshStatus();
+      const content = text(render(env.loaded, env.controller));
+      assert.ok(content.includes(env.loaded.dictionaries()[language][key]), `${language} ${mode}`);
+      assert.ok(content.includes(env.loaded.dictionaries()[language][key + 'Hint']), `${language} ${mode} hint`);
+      assert.doesNotMatch(content, /服务器中文状态原文/);
+    }
+  }
+});
+
+test('renaming status renders only backend readiness and valid pending counts in all three languages', async t => {
+  const modes = { ready: 'renamingReady', disabled: 'renamingDisabled', 'needs-directory': 'renamingNeedsDirectory', 'directory-unavailable': 'renamingDirectoryUnavailable', unsupported: 'renamingUnsupported' };
+  let currentStatus = { mode: 'desktop-bridge', renaming: { enabled: true, mode: 'ready', pending: 2, recent: [{ status: 'future-outcome', filename: 'not-proof-of-success.pdf' }] } };
+  const env = setup(call => response(call.url.endsWith('/status') ? currentStatus : envelope(defaults(), 0, currentStatus)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  render(env.loaded, env.controller);
+  for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+    env.controller.edit('language', language);
+    for (const [mode, key] of Object.entries(modes)) {
+      currentStatus = { ...currentStatus, renaming: { ...currentStatus.renaming, mode } };
+      await env.controller.refreshStatus();
+      const content = text(render(env.loaded, env.controller));
+      const dictionary = env.loaded.dictionaries()[language];
+      assert.ok(content.includes(dictionary.renamingStatus), language);
+      assert.ok(content.includes(dictionary[key]), `${language} ${mode}`);
+      assert.ok(content.includes(dictionary.renamingPending.replace('{count}', '2')));
+      assert.doesNotMatch(content, /not-proof-of-success|future-outcome/);
+    }
+  }
+  for (const pending of [-1, 0.5, '2', null]) {
+    currentStatus = { ...currentStatus, renaming: { ...currentStatus.renaming, pending } };
+    await env.controller.refreshStatus();
+    assert.doesNotMatch(text(render(env.loaded, env.controller)), /Pending downloads:/);
+  }
+});
+
+test('unknown backend status data stays useful while URL secrets remain masked', async t => {
+  const status = { mode: 'new-adapter-mode', message: 'Adapter fault at https://user:secret@example.org/check?token=private#fragment',
+    pending: [{ id: 3, kind: 'new-kind', message: 'Provider diagnostic https://user:secret@example.org/help?code=private' }] };
+  const env = setup(() => response(envelope({ ...defaults(), language: 'en-US' }, 0, status)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  const content = text(render(env.loaded, env.controller));
+  assert.match(content, /new-adapter-mode/);
+  assert.match(content, /Adapter fault at https:\/\/example.org\/check\?…#…/);
+  assert.match(content, /Provider diagnostic https:\/\/example.org\/help\?…/);
+  assert.doesNotMatch(content, /user:|secret|private|#fragment/);
+});
+
 test('status polling uses only /status and late status cannot overwrite settings edits', async t => {
   const env = setup(call => response(call.url.endsWith('/status') ? { mode: 'desktop-bridge', pending: [] } : call.body ? envelope(call.body.settings, 1) : envelope()));
   t.after(() => env.controller.dispose());
@@ -486,6 +745,77 @@ test('conflict merges preserve remote additions while applying local hostname re
   env.controller.mergeAndSave();
   await env.time.advance(0);
   assert.deepEqual(saves(env.calls)[1].body.settings.customHostnames, ['unchanged.example.org', 'remote.example.org', 'local.example.org']);
+});
+
+test('conflict merge retains independent naming checkbox edits and remote opt-in and folder changes', async t => {
+  let gets = 0;
+  const remote = { ...defaults(), language: 'zh-TW', renameEnabled: true, namingFields: ['title', 'year', 'venue'], downloadDirectory: 'D:\\Paper Downloads', proxiedUrlScheme: '%h.remote.example.edu/%p' };
+  const env = setup(call => !call.body ? response(++gets === 1 ? envelope(defaults(), 2) : envelope(remote, 4))
+    : saves(env.calls).length === 1 ? response({ error: 'Revision conflict' }, 409) : response(envelope(call.body.settings, 5)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  env.controller.edit('language', 'en-US');
+  env.controller.edit('namingFields', ['platform', 'title', 'author']);
+  await env.time.advance(600);
+  assert.equal(env.controller.getState().saveState, 'conflict');
+  await env.controller.load();
+  const review = nodes(render(env.loaded, env.controller)).find(node => node.type === 'details' && node.props.open);
+  assert.ok(review);
+  for (const value of ['Interface language', 'Traditional Chinese', 'Enable PDF file renaming', 'Local download folder (absolute path)', 'Journal or conference', 'D:\\Paper Downloads']) {
+    assert.ok(text(review).includes(value), value);
+  }
+  env.controller.mergeAndSave();
+  const merged = env.controller.getState().settings;
+  assert.equal(merged.language, 'en-US');
+  assert.equal(merged.renameEnabled, true);
+  assert.equal(merged.downloadDirectory, remote.downloadDirectory);
+  assert.deepEqual(plain(merged.namingFields), ['title', 'author', 'venue']);
+  assert.notEqual(merged.namingFields, remote.namingFields);
+  await env.time.advance(0);
+  assert.deepEqual(saves(env.calls)[1].body, { revision: 4, settings: { ...remote, language: 'en-US', namingFields: ['title', 'author', 'venue'] } });
+});
+
+test('editing naming and directory leaves a remote language change independent during merge', async t => {
+  let gets = 0;
+  const remote = { ...defaults(), language: 'zh-TW', renameEnabled: true, downloadDirectory: 'D:\\Remote Downloads' };
+  const env = setup(call => !call.body ? response(++gets === 1 ? envelope() : envelope(remote, 3))
+    : saves(env.calls).length === 1 ? response({ error: 'Revision conflict' }, 409) : response(envelope(call.body.settings, 4)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  env.controller.edit('namingFields', ['title', 'author']);
+  env.controller.edit('downloadDirectory', 'C:\\My Downloads');
+  await env.time.advance(600);
+  await env.controller.load();
+  env.controller.mergeAndSave();
+  assert.equal(render(env.loaded, env.controller, 'en').props.lang, 'zh-TW');
+  assert.match(text(render(env.loaded, env.controller, 'en')), /學術網頁代理/);
+  await env.time.advance(0);
+  assert.deepEqual(saves(env.calls)[1].body.settings, { ...remote, namingFields: ['title', 'author'], downloadDirectory: 'C:\\My Downloads' });
+});
+
+test('an older save cannot reset a newer language or naming field selection', async t => {
+  const saving = defer();
+  const env = setup(call => !call.body ? response(envelope()) : saves(env.calls).length === 1
+    ? saving.promise : response(envelope(call.body.settings, 2)));
+  t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
+  await env.controller.load();
+  env.controller.edit('language', 'en-US');
+  env.controller.edit('namingFields', ['author', 'title']);
+  await env.time.advance(600);
+  env.controller.edit('language', 'zh-TW');
+  env.controller.edit('namingFields', []);
+  const first = saves(env.calls)[0].body.settings;
+  saving.resolve(response(envelope(first, 1)));
+  await settle();
+  assert.equal(env.controller.getState().settings.language, 'zh-TW');
+  assert.deepEqual(plain(env.controller.getState().settings.namingFields), []);
+  assert.equal(render(env.loaded, env.controller).props.lang, 'zh-TW');
+  await env.time.advance(599);
+  assert.equal(saves(env.calls).length, 1);
+  await env.time.advance(1);
+  assert.equal(saves(env.calls)[1].body.settings.language, 'zh-TW');
+  assert.deepEqual(saves(env.calls)[1].body.settings.namingFields, []);
+  assert.equal(env.controller.getState().saveState, 'saved');
 });
 
 test('request timeout releases saving state and preserves the draft for retry', async t => {
