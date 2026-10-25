@@ -1,4 +1,4 @@
-# Compatibility and deployment acceptance
+# Compatibility and deployment acceptance — 0.2.1
 
 [GUIDE](GUIDE.md) · [Validation report](VALIDATION.md) · [Privacy](PRIVACY.md)
 
@@ -6,64 +6,72 @@
 
 | Component | Declared target or requirement | Verification boundary |
 | --- | --- | --- |
-| Node.js | `>=22.19` | Required by the manifest; configured CI selects the current Node 22 and 24 releases. |
-| DSH / dsh-tools / system-prompt | `>=0.2.0-rc.2 <0.3.0` | Existing host-service and tool-call contracts remain the target. |
+| Node.js | `>=22.19` | The minimum is unchanged; configured CI jobs are not completed validation runs. |
+| DSH / dsh-tools / system-prompt / dsh-scope | `>=0.2.0-rc.2 <0.3.0 || 0.2.1-rc.2` | Keep the old minimum and explicitly admit only the verified later-patch prerelease; this is not support for unverified `0.2.1-rc.3`. |
 | Cordis | `^4.0.4` | Existing plugin lifecycle and dependency contract. |
-| dsh-builtin-browser | Optional peer `0.3.x`; adapter targets `0.3.1` contracts | Tool-result and Desktop bridge behavior must be verified on the deployed version. |
-| DSH Desktop | Existing adapter targets `2.0.17` layout contracts | DOM fixtures do not prove operating-system foreground focus. |
-| pdf-lib | `1.17.1` | Local parsing dependency for bounded, unencrypted PDF identity checks. |
-| Browser native `4.1` download APIs | Interface review only | No native completion adapter or live verification is claimed; the browser peer range has not been broadened. |
+| dsh-builtin-browser | Optional peer `0.3.x || 0.4.15` | Representative `0.3.1` and `0.4.15` interface structures were reviewed; this is not proof that all versions or real providers passed. |
+| Production DesktopBridge | `taskScoped: false` | Profile identity cannot prove current-task ownership; no production background page monitoring or forced presentation. |
+| pdf-lib | `1.17.1` | Local parsing dependency for bounded, unencrypted PDF identity checks; no native download-completion adapter. |
 
-Dependency ranges and a CI workflow are declarations, not proof that every listed environment passed. The actual run results belong in [Validation](VALIDATION.md). Live institutional SSO, CAPTCHA, final file saving, and filename behavior require deployment acceptance on the intended machine and filesystem.
+npm semver does not include the later-patch prerelease `0.2.1-rc.2` in the original `>=0.2.0-rc.2 <0.3.0` range. The exact exception preserves the old floor without admitting unverified future prereleases. The maintainer has reported isolated runs with real SDK `0.2.0-rc.2` and `0.2.1-rc.2`, the latter with Cordis `4.0.5`; browser responses remain stubs, and final source results are recorded in [Validation](VALIDATION.md).
 
-## Browser integration
+Dependency declarations, interface review, offline fixtures, and live provider verification are different evidence. Final local results belong in [Validation](VALIDATION.md). The old-version live baseline only reproduced an unknown `browser_execute` on `example.com`; it does not establish a live 0.2.1 fix. No live installation, institutional account, paper, or real download was used for this work.
 
-The existing adapter does not provide a uniform native download-completion event. The plugin uses these paths:
+## Browser tool compatibility
 
-1. **Existing browser tools.** The four `academic_proxy_*` tools call browser tools through the host registry, preserving the parent call chain, cancellation signal, permissions, and tool restrictions. They use the current task's browser. The download tool captures ready-page metadata before clicking a real control.
-2. **Desktop sidebar adapter.** The browser's existing authenticated loopback bridge polls sidebar webviews about once per second and scopes guests to the current profile. Matching academic URLs can be redirected after navigation, and ready pages can provide article metadata. Exact guest mapping is used to present the original login or verification tab.
-3. **Local folder observation.** An opt-in watcher polls the explicitly selected local folder about every 500 ms, with filesystem notifications prompting earlier checks. An observed temporary file and later stable, validated, uniquely matched PDF provide conservative evidence for renaming; they are not a browser completion event.
+The four `academic_proxy_*` tools use the host registry's `ctx.tools.get` and `execute`, not a replacement browser connection. They preserve approval, token, agent, cancellation signal, and the host's tool restrictions. The adapter selects modern `dsh_browser_*` or legacy `browser_*` names from registration evidence. Modern registration takes priority; a partial modern family is not permission to silently use legacy members. A missing member, denied invocation, or cancellation does not trigger legacy fallback, and one operation stays with its selected family. Public `scopeChainOf` reads ancestor registration evidence so modern tools hidden by a child-scope restriction are not mistaken for an absent modern family. It does not execute through an ancestor to bypass the current scope. The explicit `dsh-scope` peer was already present in the old lockfile; it does not introduce a new SDK version.
 
-The plugin does not install or patch the bridge, modify DSH application files, replace a browser provider, create a separate browser, copy cookies, change the system proxy, or change the browser's download folder.
+Passing task context preserves the provider's policies; it cannot strengthen that provider's implementation. In representative browser `0.3.1`, restrict applies to the browser plugin as a whole; in `0.4.15`, it is task-scoped. Restriction bookkeeping therefore treats legacy `browser_restrict` as global and modern `dsh_browser_restrict` as task-scoped. The plugin does not promise new task isolation for the older browser.
 
-| Environment | Proxy-aware tools | Automatic navigation and ready-page metadata | Original-tab presentation | Optional file naming |
-| --- | --- | --- | --- | --- |
-| Compatible same-profile Desktop bridge and sidebar | Available when browser tools work | Polling after navigation | When the exact tab and visible layout can be verified | Conditional on every folder, temporary-file, PDF, and metadata check. |
-| Other working browser backend | Through the existing browser tools | No Desktop monitoring guarantee; the download tool can attempt current-page metadata capture | Manual selection may be required | No compatibility guarantee; depends on tool results, local file visibility, and the same strict checks. |
-| Unavailable browser | Reports failure | Unavailable | Unavailable | No new article capture or rename guarantee. |
+`toolCompatibility` describes registration as `registered`, `partial`, or `unavailable`, and reports `prefix`, `scope`, and `providerVerified: false`. A registered tool is not proof that its provider, transport, permissions, or live window work. The settings route reports `scope: profile`; it does not guarantee current-task access. `academic_proxy_status` reports task-scoped registration evidence.
 
-A remote browser's downloaded files are not implicitly available to the local watcher. A configured local folder must be the actual destination visible to the plugin process. Polling may miss short-lived navigation or temporary files. Browser restrictions pause automatic actions; removing them does not turn a missed or old download into a new candidate.
+## Safe tools-only degradation
 
-## Proxy and human handoff boundaries
+Production DesktopBridge does not prove the current task owns a page. Version 0.2.1 therefore disables automatic background page scanning, post-navigation proxy redirects, background ready-page metadata capture, and forced original-tab presentation. It does not probe browser windows to try to recover ownership. When enabled and configured, the production mode is `tools-only`. This is a deliberate safety change, not feature parity with the 0.1/0.2 profile-scoped monitor.
 
-Hostname matching is exact. The plugin does not discover institutional proxies, associate hostnames automatically, implement institutional-network bypass, or provide dedicated OpenAthens support. There are two template fields; the default hostname group and custom list remain independent. Empty templates disable proxy routing.
+Manual navigation does not automatically apply proxy rules. Use `academic_proxy_open` explicitly, then `academic_proxy_check` after navigation. On login or CAPTCHA, leave the same original tab for the human and stop automated interaction. Do not re-probe the blocked page, switch to a lookalike tab, or force presentation. The user may need to select the current task's window and original tab manually; after the human step, call `academic_proxy_check` again.
 
-The first request may reach the original site before a Desktop polling redirect. SSO transitions are tracked for approximately ten minutes. A failed proxy attempt returning to the original article pauses further redirects to avoid loops. Configuration changes reset tracking.
+An injectable task-scoped bridge or DOM fixture can exercise implementation behavior in tests. Its success does not make the production profile-only bridge task-safe or establish real renderer/operating-system foreground visibility.
 
-On login or CAPTCHA, the original tab is kept for the human. The 0.1 prompt/handoff behavior remains; 0.2 does not add automatic CAPTCHA handling or a new manual-resume protocol. Successful `presented` state requires a unique current-profile mapping, exact selected tab, expanded sidebar, visible and non-inert ancestors, a visible renderer, and an unoccluded in-page target region. The adapter calls `Page.bringToFront` and checks visibility again.
+| Capability | 0.2.1 production behavior | Not established by this state |
+| --- | --- | --- |
+| Proxy-aware tools | Dispatch through the selected host tool family with original call context. | Actual provider availability or all declared versions passing. |
+| `automaticMonitoring` | Separate from tool registration; unavailable for trusted current-task monitoring, with enabled/configured operation in `tools-only`. | Automatic proxying of human navigation or background metadata capture. |
+| Login/challenge handoff | Leave the same tab untouched for the human; manual window/tab selection may be needed. | Forced presentation or operating-system foreground focus. |
+| `renaming.enabled` | The user's opt-in preference. | A ready watcher or a saved file. |
+| `renaming.ready` | Whether naming can currently process eligible observations. | Successful saving or renaming. A restriction makes it false even if watcher mode remains `ready`. |
+| `renaming.mode` | The filesystem watcher's mode, independent of browser tool compatibility. | Unrestricted operation; the UI shows a restricted ready-mode watcher as paused. |
 
-That establishes renderer visibility only. It does not prove operating-system foreground focus or rule out another application covering the window. Hidden conversations, unsupported layouts, and ambiguous mappings return `presented: false`; the user may need to select the conversation and original page manually. The adapter does not substitute another tab merely because its URL or title matches.
+The plugin does not patch DSH application files, install a bridge, replace a browser provider, create a separate browser, copy cookies, change the system proxy, or change the browser download folder. A remote browser's files are not implicitly visible to a local watcher.
+
+## Proxy and settings boundaries
+
+Hostname matching is exact. The plugin does not discover institutional proxies, associate hostnames automatically, implement institutional-network bypass, or provide dedicated OpenAthens support. There are two template fields; the default hostname group and custom list remain independent. Empty templates disable proxy routing. This is not a network interceptor, and no automatic redirect of manual navigation is promised.
+
+Existing 0.1 and 0.2 settings remain compatible with the version-1 envelope. Missing 0.1 language and renaming preferences receive defaults; existing 0.2 values are retained. Language and naming preference edits preserve proxy pending-human-action and loop-guard state. Reconfiguration of the local naming watcher may establish a new filesystem baseline, which is a different state. An invalid settings POST missing `settings` is rejected rather than interpreted as a reset.
 
 ## Download and renaming boundaries
 
-Candidate controls must be visible and enabled, and are ranked by PDF/download semantics. Equally ranked candidates require an explicit selector choice. URL checks guard inspection and clicking; cross-origin frames or PDF viewers may require inspection through the original browser tools. The plugin does not invent a PDF URL, replace the click with `browser_download`, or fetch a file directly. `clicked` and `metadataCaptured` do not mean saved or renamed.
+Candidate controls must be visible and enabled, and are ranked by PDF/download semantics. Equally ranked candidates require an explicit selector choice. URL checks guard inspection and clicking; cross-origin frames or PDF viewers may require inspection through the original browser tools. The plugin does not invent a PDF URL, replace the click with `browser_download` or `dsh_browser_download`, or fetch a file directly.
 
-The first folder scan excludes all existing entries, including targets of existing `.pdf.crdownload` and `.pdf.part` files. Only a newly observed supported temporary file whose matching final `.pdf` becomes stable for at least two seconds can proceed. The final file must be no larger than 64 MiB, unencrypted, parseable, have valid terminal EOF structure, and remain a regular single-link file at the same identity. It must uniquely match article metadata captured before the temporary file was observed, using PDF Info DOI or an exact sufficiently long normalized title. PDF dates never supply a publication year.
+Immediately before the final click, login and challenge checks run again even when metadata was already captured. Detection of a block stops the operation without further blocked-page access. Only an explicit browser click result `clicked: true` permits reporting a successful click. A successful click or `metadataCaptured` is still not evidence of saving or renaming.
 
-Original names remain for missing or ambiguous identity, no observed temporary file, changed Save As names, old files, subfolders, symbolic links, existing multiple hard links, encrypted/corrupt/oversized PDFs, unavailable directories, or unsupported hard-link filesystems. Naming is a same-folder guarded hard-link/unlink operation with numbered collision suffixes and no overwrite. The browser's download-history path is not updated. See [GUIDE](GUIDE.md) for matching details, cache limits, and expiry.
+The 0.2 conservative filesystem algorithm is unchanged. The first folder scan excludes all existing entries, including targets of existing `.pdf.crdownload` and `.pdf.part` files. Only a newly observed supported temporary file whose matching final `.pdf` becomes stable for at least two seconds can proceed. The final file must be no larger than 64 MiB, unencrypted, parseable, have valid terminal EOF structure, and remain a regular single-link file at the same identity. It must uniquely match article metadata captured before the temporary file was observed, using PDF Info DOI or an exact sufficiently long normalized title. PDF dates never supply a publication year.
+
+Original names remain for missing or ambiguous identity, no observed temporary file, changed Save As names, old files, subfolders, symbolic links, existing multiple hard links, encrypted/corrupt/oversized PDFs, unavailable directories, or unsupported hard-link filesystems. Naming is a same-folder guarded hard-link/unlink operation with numbered collision suffixes and no overwrite. Browser download-history paths are not updated. Local observation is not a native browser completion event or support for every download. See [GUIDE](GUIDE.md) for matching details, cache limits, and expiry.
 
 ## Deployment acceptance
 
-Record actual outcomes in [Validation](VALIDATION.md). Use synthetic or openly shareable metadata and keep personal settings out of reports.
+The following is a future acceptance checklist, not a record of completed tests or authorization to use real profiles/accounts. Record actual outcomes in [Validation](VALIDATION.md), use synthetic or openly shareable metadata, and keep personal settings out of reports.
 
-1. Open the independent settings section. Confirm two blank templates on a fresh profile, 47 default hostnames, an independent custom list, default `zh-CN`, renaming off, default `title/year/platform`, and an empty download folder.
-2. Switch among all three plugin languages, save and restart. Confirm a failed save is visible and existing proxy configuration survives an upgrade from a version-1 settings envelope.
-3. Verify exact default/custom hostname routing, already-proxied behavior, unmatched hosts, and disabling only the default group. Check another profile is unaffected.
-4. Verify institutional SSO and human verification remain in the exact original tab. Complete the human step and re-check; confirm a duplicate-URL tab is not substituted. Do not automate solving CAPTCHA as a test.
-5. Confirm a real visible download-control click produces a saved file through the browser's own flow. Verify that clicking or opening a PDF tab alone is not reported as saving.
-6. Enable renaming in an explicitly chosen local directory. Open a ready article first, observe a new supported temporary file, and verify one uniquely matched valid PDF receives the selected filename. Confirm the output file contents are unchanged.
-7. Exercise expected skips: pre-existing files, fast downloads without an observed temporary file, Save As mismatches, missing/ambiguous metadata, encrypted/corrupt/oversized PDFs, subfolders and links. Test name collisions, missing fields, no selected fields, and hard-link operation failure without overwriting any file.
-8. Confirm recent rename status has at most ten basenames and no absolute directory or configured templates. Confirm restart/reconfiguration clears tracking and does not process old files. Account for stale browser history paths after renaming.
-9. Verify browser restrictions, master disablement, profile isolation, and plugin shutdown release monitoring resources without closing existing browser tabs. Test the intended OS/filesystem rather than assuming fixtures cover it.
+1. In an isolated authorized environment, confirm blank templates on a fresh profile, 47 default hostnames, an independent custom list, default `zh-CN`, renaming off, default `title/year/platform`, and an empty download folder.
+2. Check 0.1 and 0.2 settings loading, all three languages, save failures, restart persistence, preservation of proxy pending/loop-guard state during language/naming edits, and rejection of a POST missing `settings` without resetting stored values.
+3. Check legacy-only, modern-only, mixed, partial-modern, denied, cancelled, and unavailable registration cases. Verify stable family selection and preserved host call context. Record the provider version and restrict granularity rather than assuming all `0.3.x` providers behave alike.
+4. Distinguish settings `scope: profile` from tool `scope: task`. Confirm `providerVerified: false`, separate `automaticMonitoring`, production `tools-only`, and separate naming enabled/ready/mode states, including restricted ready-mode pause.
+5. Confirm manual navigation causes no background page scan, proxy redirect, metadata capture, or forced presentation. Exercise explicit proxy tools without changing another task's browser.
+6. If separately authorized for live acceptance, confirm SSO/human verification stays in the same tab without extra blocked-page interactions or substitute tabs. Human completion precedes the next check; never automate solving CAPTCHA.
+7. Confirm the pre-click recheck catches a new block even after metadata capture, and only explicit `clicked: true` is accepted. Verify a real control-driven save separately; a click or opened PDF tab alone is insufficient.
+8. In an explicitly chosen isolated local folder, confirm one supported temporary-file sequence with prior unique metadata produces a renamed valid PDF with unchanged bytes. Exercise old files, fast downloads, name mismatches, missing/ambiguous metadata, invalid PDFs, links, collisions, missing fields, and hard-link failure without overwrite.
+9. Confirm status contains at most ten basenames and no configured templates or absolute folder. Watcher restart/reconfiguration must exclude old files without being mistaken for a reset of proxy pending/loop-guard state. Check restriction, disablement, and shutdown without closing existing browser tabs.
 
-A passed unit test is evidence for that fixture. It is not proof of every publisher's PDF metadata, institutional login flow, browser backend, or filesystem.
+A passed fixture establishes only the tested contract. Live settings rendering, a real browser provider, institutional login, final saving, and the intended OS/filesystem remain separate acceptance work.

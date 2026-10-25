@@ -75,7 +75,7 @@ export class PaperDownloadMonitor {
     return true;
   }
   status() {
-    return { enabled: Boolean(this.settings().renameEnabled), mode: this.mode, pending: this.pending.size,
+    return { enabled: Boolean(this.settings().renameEnabled), ready: !this.disposed && this.mode === 'ready' && this.enabled() && this.allowed(), mode: this.mode, pending: this.pending.size,
       recent: this.recent.map(item => ({ ...item, missingFields: [...(item.missingFields || [])] })) };
   }
   note(outcome) {

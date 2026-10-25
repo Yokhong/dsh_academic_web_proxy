@@ -1,6 +1,12 @@
-import { ProxyRules, RedirectGuard } from './proxy.js';
+import { ProxyRules, RedirectGuard, normalizeHostname } from './proxy.js';
 import { INSPECT_PAGE_SCRIPT } from './page-scripts.js';
 import { extractPaperMetadata } from './paper-metadata.js';
+
+const ruleFingerprint = settings => JSON.stringify([
+  settings.enabled, settings.useDefaultHostnames,
+  [...new Set(settings.customHostnames.map(normalizeHostname))].sort(),
+  settings.loginUrlScheme, settings.proxiedUrlScheme,
+]);
 
 const safeLocation = input => {
   try { const url = new URL(input); return `${url.origin}${url.pathname}`; } catch { return ''; }
@@ -12,14 +18,21 @@ export class ProxyMonitor {
     this.downloads = downloads;
     this.bridge = bridge; this.settings = settings; this.intervalMs = intervalMs; this.now = now;
     this.rules = new ProxyRules(settings()); this.guard = new RedirectGuard({ now });
+    this.fingerprint = ruleFingerprint(this.rules.settings);
     this.tabs = new Map(); this.pending = new Map(); this.busy = 0; this.restricted = false;
     this.state = { mode: 'starting', message: '正在检测内置浏览器桥接能力。' };
     this.stopped = true; this.flight = null; this.timer = null; this.generation = 0; this.disposed = false;
   }
   configure() {
-    this.generation++;
-    this.rules = new ProxyRules(this.settings()); this.guard.clear();
-    this.tabs.clear(); this.pending.clear();
+    const rules = new ProxyRules(this.settings());
+    const fingerprint = ruleFingerprint(rules.settings);
+    this.rules = rules;
+    if (fingerprint === this.fingerprint) return;
+    this.fingerprint = fingerprint; this.generation++;
+    this.guard.clear(); this.tabs.clear(); this.pending.clear();
+  }
+  isCurrent(generation) {
+    return !this.disposed && generation === this.generation && this.bridge.taskScoped === true;
   }
   start() {
     if (!this.stopped || this.disposed) return;
@@ -46,35 +59,40 @@ export class ProxyMonitor {
   async scan() {
     const generation = this.generation;
     if (this.disposed) return;
-    if (this.busy || this.restricted) {
-      if (this.restricted) this.state = { mode: 'restricted', message: 'browser_restrict 已限制操作，自动跳转暂停。' };
+    if (this.restricted) {
+      this.state = { mode: 'restricted', message: 'browser_restrict 已限制操作，自动跳转暂停。' };
       return;
     }
     if (!this.rules.settings.enabled || !this.rules.configured) {
-      this.state = { mode: this.rules.settings.enabled ? 'unconfigured' : 'disabled', message: this.rules.settings.enabled ? '填写代理方案后自动启用。两个字段目前均为空。' : '学术网页代理已关闭。' };
+      this.state = { mode: this.rules.settings.enabled ? 'unconfigured' : 'disabled', message: this.rules.settings.enabled ? '填写代理方案后检查浏览器兼容性。两个字段目前均为空。' : '学术网页代理已关闭。' };
       return;
     }
+    if (this.bridge.taskScoped !== true) {
+      this.state = { mode: 'tools-only', message: '浏览器桥接无法证明任务隔离，自动监测与页面展示已停用；浏览器工具可用性请查看工具兼容性状态。' };
+      return;
+    }
+    if (this.busy) return;
     const available = await this.bridge.discover();
-    if (this.disposed || generation !== this.generation) return;
+    if (!this.isCurrent(generation)) return;
     if (!available) {
-      this.state = { mode: 'unavailable', message: '未发现兼容的桌面内置浏览器桥接。自动监测不可用；academic_proxy_open 仍可使用浏览器工具打开代理链接。' };
+      this.state = { mode: 'unavailable', message: '未发现兼容的桌面内置浏览器桥接，自动监测不可用；浏览器工具可用性需单独检查。' };
       return;
     }
     const guests = (await this.bridge.list()).filter(guest => guest.type === 'webview' && !guest.destroyed);
-    if (this.disposed || generation !== this.generation) return;
+    if (!this.isCurrent(generation)) return;
     const alive = new Set(guests.map(guest => guest.id));
     for (const id of this.tabs.keys()) if (!alive.has(id)) this.tabs.delete(id);
     for (const id of this.pending.keys()) if (!alive.has(id)) this.pending.delete(id);
-    this.state = { mode: 'desktop-bridge', message: '正在监测桌面内置浏览器；导航后约 1 秒内检查代理与登录状态。' };
+    this.state = { mode: 'desktop-bridge', message: '正在监测任务隔离的内置浏览器；导航后约 1 秒内检查代理与登录状态。' };
     for (const guest of guests) {
-      if (this.disposed || generation !== this.generation || this.busy || this.restricted || !this.rules.settings.enabled) break;
+      if (!this.isCurrent(generation) || this.busy || this.restricted || !this.rules.settings.enabled) break;
       try { await this.scanTab(guest, generation); } catch {
         // A closing/navigating tab is transient. Never restart or replace the browser.
       }
     }
   }
   async scanTab(guest, generation = this.generation) {
-    if (this.disposed || generation !== this.generation) return;
+    if (!this.isCurrent(generation) || this.restricted || !this.rules.settings.enabled || !this.rules.configured) return;
     let tracked = this.tabs.get(guest.id);
     const decision = this.rules.decide(guest.url);
     // A proxy may return to the original URL after authentication. Do not loop.
@@ -82,7 +100,7 @@ export class ProxyMonitor {
     if (!returnedToSource && decision.action === 'redirect' && !this.pending.has(guest.id)) {
       // Re-read immediately before mutation: do not redirect a tab the user just changed.
       const current = await this.bridge.evaluate(guest.id, 'location.href');
-      if (current !== guest.url || this.busy || this.restricted || generation !== this.generation || !this.rules.settings.enabled) return;
+      if (current !== guest.url || this.busy || this.restricted || !this.isCurrent(generation) || !this.rules.settings.enabled) return;
       if (!this.guard.allow(guest.id, guest.url)) return;
       tracked = { source: guest.url, attempted: true, startedAt: this.now() };
       this.tabs.set(guest.id, tracked);
@@ -92,11 +110,11 @@ export class ProxyMonitor {
     if (!this.rules.isRelated(guest.url) && !tracked) return;
     if (!tracked) { tracked = { startedAt: this.now() }; this.tabs.set(guest.id, tracked); }
     // Follow SSO redirects during this tab's current proxy flow (never inspect field values).
-    if (tracked && !returnedToSource && this.now() - (tracked.startedAt ??= this.now()) > 10 * 60_000 && !this.rules.isRelated(guest.url)) {
+    if (tracked && !returnedToSource && !this.pending.has(guest.id) && this.now() - (tracked.startedAt ??= this.now()) > 10 * 60_000 && !this.rules.isRelated(guest.url)) {
       this.tabs.delete(guest.id); this.pending.delete(guest.id); return;
     }
     const page = await this.bridge.evaluate(guest.id, INSPECT_PAGE_SCRIPT);
-    if (!page || page.url !== guest.url || generation !== this.generation || this.busy || this.restricted) return;
+    if (!page || page.url !== guest.url || !this.isCurrent(generation) || this.busy || this.restricted) return;
     if (page.kind === 'challenge' || page.kind === 'login') {
       const previous = this.pending.get(guest.id);
       const changed = previous?.kind !== page.kind || previous?.displayUrl !== safeLocation(page.url);
@@ -104,6 +122,7 @@ export class ProxyMonitor {
       this.pending.set(guest.id, item);
       if (!previous || changed) {
         const shown = await this.bridge.present(guest.id);
+        if (!this.isCurrent(generation)) return;
         item.presented = shown.presented === true;
         if (!item.presented) item.message += ' 自动展示未确认，请使用“显示此页面”或手动展开浏览器对应标签。';
       }
@@ -112,7 +131,7 @@ export class ProxyMonitor {
       if (this.downloads?.enabled() && (this.rules.isRelated(page.url) || this.rules.originalHostname(page.url)) && (tracked.metadataUrl !== page.url || this.now() - (tracked.metadataAt ?? 0) > 10_000)) {
         const hostname = this.rules.originalHostname(page.url);
         const metadata = await this.bridge.evaluate(guest.id, `(${extractPaperMetadata.toString()})(${JSON.stringify(hostname)})`);
-        if (this.disposed || generation !== this.generation || this.busy || this.restricted || metadata?.pageUrl !== page.url) return;
+        if (!this.isCurrent(generation) || this.busy || this.restricted || metadata?.pageUrl !== page.url) return;
         this.downloads.remember(metadata);
         tracked.metadataUrl = page.url; tracked.metadataAt = this.now();
       }
@@ -120,15 +139,15 @@ export class ProxyMonitor {
   }
   async trackCurrent(marker, page, source) {
     const generation = this.generation;
-    if (this.disposed || this.restricted || !this.rules.settings.enabled || !await this.bridge.discover()) return;
-    if (this.disposed || generation !== this.generation) return;
+    if (!this.isCurrent(generation) || this.restricted || !this.rules.settings.enabled || !this.rules.configured || !await this.bridge.discover()) return;
+    if (!this.isCurrent(generation) || this.restricted || !this.rules.settings.enabled) return;
     const expression = `(() => { const key = Symbol.for('dsh-academic-web-proxy:page-marker'); if (globalThis[key] !== ${JSON.stringify(marker)}) return null; delete globalThis[key]; return location.href; })()`;
     for (const guest of await this.bridge.list()) {
-      if (this.disposed || generation !== this.generation || this.restricted) return;
+      if (!this.isCurrent(generation) || this.restricted) return;
       if (guest.type !== 'webview' || guest.url !== page.url) continue;
       let current;
       try { current = await this.bridge.evaluate(guest.id, expression); } catch { continue; }
-      if (current !== page.url || generation !== this.generation || this.restricted) continue;
+      if (current !== page.url || !this.isCurrent(generation) || this.restricted) continue;
       this.tabs.set(guest.id, { source, attempted: Boolean(source), startedAt: this.now() });
       await this.scanTab(guest, generation);
       return;
@@ -136,12 +155,13 @@ export class ProxyMonitor {
   }
   async present(id) {
     const generation = this.generation;
-    if (this.disposed || !this.pending.has(id)) throw new Error('该页面已关闭或无需人工处理，请刷新状态。');
+    if (this.bridge.taskScoped !== true) return { presented: false, reason: 'task-scope-unverified' };
+    if (this.disposed || this.restricted || !this.rules.settings.enabled || !this.rules.configured || !this.pending.has(id)) throw new Error('该页面已关闭、操作已暂停或无需人工处理，请刷新状态。');
     const result = await this.bridge.present(id);
-    if (this.disposed || generation !== this.generation) return { presented: false, reason: 'monitor-disposed-or-reconfigured' };
+    if (!this.isCurrent(generation)) return { presented: false, reason: 'monitor-disposed-or-reconfigured' };
     const item = this.pending.get(id);
     if (item) item.presented = result.presented === true;
     return result;
   }
-  status() { return { ...this.state, pending: [...this.pending.values()].map(item => ({ ...item })), ...(this.downloads ? { renaming: this.downloads.status() } : {}) }; }
+  status() { return { ...this.state, automaticMonitoring: { mode: this.state.mode, taskScoped: this.bridge.taskScoped === true }, pending: [...this.pending.values()].map(item => ({ ...item })), ...(this.downloads ? { renaming: this.downloads.status() } : {}) }; }
 }
