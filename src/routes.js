@@ -3,9 +3,8 @@ import { DEFAULT_HOSTNAMES } from './default-hostnames.js';
 const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers });
 
-export function createHandlers({ store, monitor, downloads, ready, browserStatus }) {
-  const status = () => ({ ...monitor.status(), ...(browserStatus ? { toolCompatibility: browserStatus() } : {}) });
-  const snapshot = () => ({ settings: store.get(), revision: store.revision, defaultHostnames: [...DEFAULT_HOSTNAMES], status: status() });
+export function createHandlers({ store, monitor, downloads, ready }) {
+  const snapshot = () => ({ settings: store.get(), revision: store.revision, defaultHostnames: [...DEFAULT_HOSTNAMES], status: monitor.status() });
   const handle = fn => async request => {
     try { await ready; return await fn(request); }
     catch (error) {
@@ -20,8 +19,7 @@ export function createHandlers({ store, monitor, downloads, ready, browserStatus
       if (text.length > 256_000) return json({ error: '配置内容过大。' }, 413);
       if (!request.headers.get('content-type')?.startsWith('application/json')) return json({ error: '需要 application/json。' }, 415);
       const body = JSON.parse(text);
-      if (!body || typeof body !== 'object' || Array.isArray(body) || !Number.isSafeInteger(body.revision) || body.revision < 0) return json({ error: '缺少有效 revision，请重新载入配置。' }, 400);
-      if (!Object.hasOwn(body, 'settings') || !body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings)) return json({ error: 'settings 必须为非空值的 JSON 对象。' }, 400);
+      if (!body || !Number.isSafeInteger(body.revision) || body.revision < 0) return json({ error: '缺少有效 revision，请重新载入配置。' }, 400);
       await store.save(body.settings, { revision: body.revision });
       monitor.configure();
       downloads?.configure();
@@ -29,7 +27,7 @@ export function createHandlers({ store, monitor, downloads, ready, browserStatus
       void Promise.resolve().then(() => monitor.tick()).catch(() => {});
       return json(snapshot());
     }),
-    status: handle(async () => json(status())),
+    status: handle(async () => json(monitor.status())),
     present: handle(async request => {
       if (!request.headers.get('content-type')?.startsWith('application/json')) return json({ error: '需要 application/json。' }, 415);
       const text = await request.text();

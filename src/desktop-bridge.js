@@ -204,8 +204,6 @@ export class DesktopBridge {
     this.#presentationTimeoutMs = boundedInteger(presentationTimeoutMs, 'presentationTimeoutMs', 1, 30000);
   }
 
-  get taskScoped() { return false; }
-
   async #endpoint() {
     let file;
     try {

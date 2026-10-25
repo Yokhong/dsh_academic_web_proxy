@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({ id: 'dsh-academic-web-proxy', factory(require) {
   const FIELD_LABELS = { title: 'paperTitle', author: 'paperAuthor', year: 'paperYear', venue: 'paperVenue', platform: 'paperPlatform' };
   const LANGUAGE_LABELS = { 'zh-CN': 'simplifiedChinese', 'zh-TW': 'traditionalChinese', 'en-US': 'americanEnglish' };
   const STATUS_KEYS = { starting: 'modeStarting', restricted: 'modeRestricted', unconfigured: 'modeUnconfigured',
-    disabled: 'modeDisabled', unavailable: 'modeUnavailable', 'desktop-bridge': 'modeDesktop', 'tools-only': 'modeToolsOnly' };
+    disabled: 'modeDisabled', unavailable: 'modeUnavailable', 'desktop-bridge': 'modeDesktop' };
   const PENDING_KEYS = { login: 'pendingLogin', challenge: 'pendingChallenge' };
   const SAVE_DELAY = 600;
   const STATUS_DELAY = 5000;
@@ -67,17 +67,12 @@ window.__ModuleLoader__.load({ id: 'dsh-academic-web-proxy', factory(require) {
     exampleTitle: '学术网页代理研究', exampleAuthor: '张明', exampleVenue: '示例学术期刊', originalFilename: '保留原文件名',
     modeStarting: '正在检测浏览器', modeStartingHint: '正在检测内置浏览器的桥接能力。',
     modeRestricted: '自动跳转已暂停', modeRestrictedHint: '浏览器操作受到限制，自动跳转已暂停。',
-    modeUnconfigured: '尚未配置代理模板', modeUnconfiguredHint: '两个代理模板均为空；填写机构提供的模板后，通过学术代理工具打开网页。',
+    modeUnconfigured: '尚未配置代理模板', modeUnconfiguredHint: '两个代理模板均为空；填写机构提供的模板后启用自动代理。',
     modeDisabled: '代理已关闭', modeDisabledHint: '学术网页代理已关闭，配置仍会保留。',
     modeUnavailable: '浏览器桥接不可用', modeUnavailableHint: '自动监测暂不可用，请检查内置浏览器状态。',
     modeDesktop: '桌面浏览器监测已启用', modeDesktopHint: '正在监测桌面内置浏览器的代理与登录状态。',
-    modeToolsOnly: '仅通过当前任务工具操作', modeToolsOnlyHint: '无法证明后台页面属于当前任务，已停止后台扫描、自动跳转和强制展示。请使用 academic_proxy_open / academic_proxy_check 操作当前任务浏览器。',
-    toolStatus: '浏览器工具注册', toolRegistered: '所需工具已注册', toolPartial: '部分工具缺失或受限', toolUnavailable: '未检测到兼容工具',
-    toolScopeProfile: '这是配置级注册情况；当前任务仍可能有独立限制。', toolScopeTask: '已按当前任务范围检查工具注册情况。',
-    toolUnverified: '工具注册不代表浏览器载体已连接；状态查询不会创建浏览器窗口。',
     pendingLogin: '请在对应原页面完成机构登录。', pendingChallenge: '请在对应原页面完成人机验证；自动操作已暂停。',
-    renamingStatus: '下载命名状态', renamingReady: '文件夹监测已就绪；仅处理临时文件消失、稳定且元数据匹配的新 PDF。',
-    renamingPaused: '命名监测暂已暂停；不会执行重命名。',
+    renamingStatus: '下载命名状态', renamingReady: '已就绪，等待支持的下载完成。',
     renamingUnsupported: '当前浏览器不支持自动重命名，下载保留原文件名。', renamingDisabled: '自动重命名已关闭。',
     renamingPending: '待处理下载：{count}',
   };
@@ -130,17 +125,12 @@ window.__ModuleLoader__.load({ id: 'dsh-academic-web-proxy', factory(require) {
     exampleTitle: '學術網頁代理研究', exampleAuthor: '張明', exampleVenue: '範例學術期刊', originalFilename: '保留原檔名',
     modeStarting: '正在偵測瀏覽器', modeStartingHint: '正在偵測內建瀏覽器的橋接能力。',
     modeRestricted: '自動跳轉已暫停', modeRestrictedHint: '瀏覽器操作受到限制，自動跳轉已暫停。',
-    modeUnconfigured: '尚未設定代理範本', modeUnconfiguredHint: '兩個代理範本均為空白；填寫機構提供的範本後，透過學術代理工具開啟網頁。',
+    modeUnconfigured: '尚未設定代理範本', modeUnconfiguredHint: '兩個代理範本均為空白；填寫機構提供的範本後啟用自動代理。',
     modeDisabled: '代理已關閉', modeDisabledHint: '學術網頁代理已關閉，設定仍會保留。',
     modeUnavailable: '瀏覽器橋接無法使用', modeUnavailableHint: '自動監測暫時無法使用，請檢查內建瀏覽器狀態。',
     modeDesktop: '桌面瀏覽器監測已啟用', modeDesktopHint: '正在監測桌面內建瀏覽器的代理與登入狀態。',
-    modeToolsOnly: '僅透過目前任務工具操作', modeToolsOnlyHint: '無法證明背景頁面屬於目前任務，已停止背景掃描、自動跳轉及強制顯示。請使用 academic_proxy_open / academic_proxy_check 操作目前任務瀏覽器。',
-    toolStatus: '瀏覽器工具註冊', toolRegistered: '所需工具已註冊', toolPartial: '部分工具缺少或受限', toolUnavailable: '未偵測到相容工具',
-    toolScopeProfile: '這是設定層級的註冊情況；目前任務仍可能有獨立限制。', toolScopeTask: '已依目前任務範圍檢查工具註冊情況。',
-    toolUnverified: '工具註冊不代表瀏覽器載體已連線；狀態查詢不會建立瀏覽器視窗。',
     pendingLogin: '請在對應原頁面完成機構登入。', pendingChallenge: '請在對應原頁面完成人機驗證；自動操作已暫停。',
-    renamingStatus: '下載命名狀態', renamingReady: '資料夾監測已就緒；僅處理暫存檔消失、穩定且中繼資料相符的新 PDF。',
-    renamingPaused: '命名監測暫已停止；不會執行重新命名。',
+    renamingStatus: '下載命名狀態', renamingReady: '已就緒，等待支援的下載完成。',
     renamingUnsupported: '目前瀏覽器不支援自動重新命名，下載保留原檔名。', renamingDisabled: '自動重新命名已關閉。',
     renamingPending: '待處理下載：{count}',
   };
@@ -193,17 +183,12 @@ window.__ModuleLoader__.load({ id: 'dsh-academic-web-proxy', factory(require) {
     exampleTitle: 'Academic Web Proxy Research', exampleAuthor: 'Ming Zhang', exampleVenue: 'Example Research Journal', originalFilename: 'Original filename is kept',
     modeStarting: 'Detecting the browser', modeStartingHint: 'Checking the built-in browser bridge.',
     modeRestricted: 'Automatic navigation paused', modeRestrictedHint: 'Browser operations are restricted, so automatic navigation is paused.',
-    modeUnconfigured: 'Proxy templates not configured', modeUnconfiguredHint: 'Both proxy templates are empty. Enter your institution’s templates, then open pages with the academic proxy tools.',
+    modeUnconfigured: 'Proxy templates not configured', modeUnconfiguredHint: 'Both proxy templates are empty. Enter the templates supplied by your institution to enable automatic proxying.',
     modeDisabled: 'Proxy disabled', modeDisabledHint: 'Academic Web Proxy is off. Your configuration is retained.',
     modeUnavailable: 'Browser bridge unavailable', modeUnavailableHint: 'Automatic monitoring is unavailable. Check the built-in browser.',
     modeDesktop: 'Desktop browser monitoring active', modeDesktopHint: 'Monitoring proxy and login status in the built-in desktop browser.',
-    modeToolsOnly: 'Current-task tools only', modeToolsOnlyHint: 'Background task ownership cannot be proven. Background scanning, automatic redirects and forced presentation are disabled. Use academic_proxy_open / academic_proxy_check in the current task browser.',
-    toolStatus: 'Browser tool registration', toolRegistered: 'Required tools registered', toolPartial: 'Some tools missing or restricted', toolUnavailable: 'No compatible tools detected',
-    toolScopeProfile: 'This is profile-level registration; the current task may have additional restrictions.', toolScopeTask: 'Tool registration was checked in the current task scope.',
-    toolUnverified: 'Registration does not prove a connected browser provider. Status checks do not create browser windows.',
     pendingLogin: 'Complete institutional login on the corresponding original page.', pendingChallenge: 'Complete human verification on the corresponding original page. Automatic actions are paused.',
-    renamingStatus: 'Download naming status', renamingReady: 'Folder monitoring ready; only new stable PDFs with a disappeared temporary file and matching metadata are eligible.',
-    renamingPaused: 'Filename monitoring is paused; no renames will run.',
+    renamingStatus: 'Download naming status', renamingReady: 'Ready; waiting for a supported download to finish.',
     renamingUnsupported: 'This browser does not support automatic renaming. Downloads keep their original filenames.', renamingDisabled: 'Automatic renaming is off.',
     renamingPending: 'Pending downloads: {count}',
   };
@@ -626,12 +611,7 @@ window.__ModuleLoader__.load({ id: 'dsh-academic-web-proxy', factory(require) {
     const renaming = status.renaming;
     const renamingKeys = { ready: 'renamingReady', disabled: 'renamingDisabled', unsupported: 'renamingUnsupported',
       'needs-directory': 'renamingNeedsDirectory', 'directory-unavailable': 'renamingDirectoryUnavailable' };
-    const renamingKey = renaming?.mode === 'ready' && renaming.ready === false ? 'renamingPaused'
-      : renaming && Object.hasOwn(renamingKeys, renaming.mode) ? renamingKeys[renaming.mode] : null;
-    const toolStatus = status.toolCompatibility;
-    const toolKeys = { registered: 'toolRegistered', partial: 'toolPartial', unavailable: 'toolUnavailable' };
-    const toolKey = toolStatus && Object.hasOwn(toolKeys, toolStatus.mode) ? toolKeys[toolStatus.mode] : null;
-    const toolPrefix = ['browser_', 'dsh_browser_'].includes(toolStatus?.prefix) ? toolStatus.prefix : null;
+    const renamingKey = renaming && Object.hasOwn(renamingKeys, renaming.mode) ? renamingKeys[renaming.mode] : null;
     const preview = filenamePreview({ title: t('exampleTitle'), author: t('exampleAuthor'), year: '2025', venue: t('exampleVenue'), platform: 'Example.org' }, state.settings.namingFields, t('originalFilename'));
     const saveNotice = state.saveState === 'conflict' ? t('conflict') : state.saveState === 'review' ? t('review') : state.saveState === 'error' ? t('saveFailed') : t(state.saveState);
     const template = (field, label, example) => h('div', { key: field },
@@ -705,9 +685,6 @@ window.__ModuleLoader__.load({ id: 'dsh-academic-web-proxy', factory(require) {
       card('runtime', t('runtime'),
         h('dl', { className: 'dsh-awp-defs' }, h('dt', null, t('mode')), h('dd', { className: 'dsh-awp-code' }, modeKey ? t(modeKey) : status.mode === 'unknown' ? t('unknown') : safeMessage(status.mode))),
         modeKey ? hint(t(modeKey + 'Hint')) : status.message ? hint(safeMessage(status.message)) : null,
-        toolKey ? h('div', null,
-          h('h4', { className: 'dsh-awp-heading' }, t('toolStatus')), hint(t(toolKey) + (toolPrefix ? ' (' + toolPrefix + '*)' : '')),
-          hint(t(toolStatus.scope === 'task' ? 'toolScopeTask' : 'toolScopeProfile')), hint(t('toolUnverified'))) : null,
         renamingKey ? h('div', null,
           h('h4', { className: 'dsh-awp-heading' }, t('renamingStatus')), hint(t(renamingKey)),
           Number.isSafeInteger(renaming.pending) && renaming.pending >= 0 ? hint(t('renamingPending', { count: renaming.pending })) : null) : null,

@@ -6,7 +6,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { DesktopBridge } from '../src/desktop-bridge.js';
-import { ProxyMonitor } from '../src/monitor.js';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -73,34 +72,6 @@ const guests = [
   { id: 78, type: 'webview', url: 'https://same.example/', title: 'Same title', destroyed: false },
 ];
 const evaluated = value => ({ ok: true, result: { result: { type: typeof value, value } } });
-
-test('profile-only DesktopBridge never proves task scope or contacts an endpoint on monitor startup', async context => {
-  for (const profileUrl of [undefined, 'http://127.0.0.1:54321/session/current', () => 'http://127.0.0.1:54321/session/current']) {
-    const fixtureState = await fixture(context, () => ({ ok: true, guests: [
-      { id: 1, type: 'window', url: 'http://127.0.0.1:54321/session/current' },
-      { id: 2, type: 'window', url: 'http://127.0.0.1:54321/session/other' },
-      { id: 77, type: 'webview', url: 'https://dl.acm.org/article', taskId: 'current' },
-      { id: 78, type: 'webview', url: 'https://dl.acm.org/article', taskId: 'other' },
-      { id: 79, type: 'webview', url: 'https://dl.acm.org/article' },
-    ] }), { bridge: { profileUrl, requireProfile: true } });
-    assert.equal(fixtureState.bridge.taskScoped, false);
-    assert.throws(() => { fixtureState.bridge.taskScoped = true; }, TypeError);
-    const monitor = new ProxyMonitor({ bridge: fixtureState.bridge, intervalMs: 60_000, settings: () => ({
-      enabled: true, useDefaultHostnames: true, customHostnames: [],
-      loginUrlScheme: '', proxiedUrlScheme: '%h.proxy.example.edu/%p',
-    }) });
-    try {
-      monitor.start();
-      await new Promise(resolve => setImmediate(resolve));
-      await monitor.tick();
-      assert.equal(monitor.status().mode, 'tools-only');
-      assert.deepEqual(monitor.status().automaticMonitoring, { mode: 'tools-only', taskScoped: false });
-      assert.equal(fixtureState.connections, 0);
-      assert.deepEqual(fixtureState.requests, []);
-    } finally { await monitor.stop(); }
-    assert.equal(fixtureState.connections, 0);
-  }
-});
 
 test('authenticates, discovers and normalizes only live sidebar guests', async t => {
   const f = await fixture(t, () => ({ ok: true, guests: [...guests,
@@ -454,23 +425,10 @@ test('a hidden session is not replaced with another visible tab or a duplicated 
 
 test('does not claim presentation or bringToFront while the selected guest is covered', async t => {
   const f = await presentationFixture(t, { overlay: true });
-  const proofs = [];
-  const evaluate = f.shell.evaluate;
-  f.shell.evaluate = expression => {
-    const proof = evaluate(expression);
-    proofs.push(proof);
-    return proof;
-  };
   const result = await f.bridge.present(78);
   assert.equal(result.presented, false);
-  assert.deepEqual(f.shell.state.selected, [1]);
-  assert.ok(proofs.some(proof => proof.found === true && proof.presented === false &&
-    proof.reason === 'The selected guest is not visibly exposed in the desktop shell.'));
-  // The last visibility request may exhaust the presentation deadline before
-  // replying. Both outcomes must refuse presentation after observing the cover.
-  assert.match(result.reason, /exposed|visible|^Desktop bridge: request timed out$/);
+  assert.match(result.reason, /exposed|visible/);
   assert.deepEqual(f.shell.state.bring, []);
-  assert.equal(f.requests.some(request => request.method === 'Page.bringToFront'), false);
 });
 
 test('fails closed when shell markers are missing even if another tab is visible', async t => {

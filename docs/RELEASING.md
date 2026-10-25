@@ -1,27 +1,18 @@
-# Releasing 0.2.1
+# Releasing 0.2.0
 
 [GUIDE](GUIDE.md) · [Compatibility](COMPATIBILITY.md) · [Validation report](VALIDATION.md) · [Upgrading](UPGRADING.md)
 
-This procedure prepares source and an installable package for review. A local build, test run, or documentation update does not publish anything. GitHub source, a release tag/asset, npm publication, and a catalog change are separate actions. No remote publication, live installation, real account, paper, or download acceptance is performed as part of this documentation work.
+This procedure prepares source and an installable package for review. A local build, test run, or market YAML draft does not publish anything. GitHub source, a GitHub Release asset, npm publication, and a catalog pull request are separate actions.
 
 ## Prepare the source
 
-Use a complete source checkout containing `scripts`, `test`, and the lockfile. Confirm the intended release revision and that `package.json`, `package-lock.json`, and `CHANGELOG.md` agree on `0.2.1`. The package remains `dsh-academic-web-proxy`; the repository is `Yokhong/dsh_academic_web_proxy`. The underscore/hyphen difference is intentional.
+Use a complete source checkout containing `scripts`, `test`, and the lockfile. Confirm the intended release revision and that `package.json`, `package-lock.json`, and `CHANGELOG.md` agree on `0.2.0`. The package remains `dsh-academic-web-proxy`; the repository is `Yokhong/dsh_academic_web_proxy`. The underscore/hyphen difference is intentional.
 
-The new fix must receive a new `v0.2.1` tag and npm `0.2.1`. Do not move, overwrite, or relabel the already published `v0.2.0` tag, or imply that installing npm `0.2.0` includes these fixes. Do not claim `0.2.1` is publicly available before publication is confirmed.
+Keep the existing declared engine and peer ranges unless compatibility work supports a change: Node.js `>=22.19`, DSH `>=0.2.0-rc.2 <0.3.0`, and optional `dsh-builtin-browser` `0.3.x`. Reviewing native `4.1` APIs does not justify claiming or declaring tested support. The PDF dependency and lockfile must be present for clean installs.
 
-Keep Node.js `>=22.19` and the original DSH/SDK minimum with range `>=0.2.0-rc.2 <0.3.0 || 0.2.1-rc.2`. npm semver excludes the later-patch prerelease from the old range; the explicit exception covers the actual isolated real-SDK `0.2.1-rc.2` run, alongside `0.2.0-rc.2`, without admitting unverified `0.2.1-rc.3`. Browser responses in those SDK runs remain stubs; final source results are recorded in [Validation](VALIDATION.md). The optional `dsh-builtin-browser` peer is `0.3.x || 0.4.15`; representative `0.3.1` / `0.4.15` interface review is not an all-version test claim. The PDF dependency and lockfile must be present for clean source installs.
+Review the two READMEs and [GUIDE](GUIDE.md) against the implementation. Preserve the prominent limitations: opt-in naming, explicit local directory, temporary-file observation, a stable valid unencrypted PDF no larger than 64 MiB, prior unique metadata match, no overwrite, and unchanged original names when evidence is insufficient. Retain the existing 0.1 login/CAPTCHA handoff behavior without claiming new automatic resume capabilities.
 
-Review both READMEs and [GUIDE](GUIDE.md) against the final implementation:
-
-- Legacy `browser_*` and modern `dsh_browser_*` tools dispatch through host `ctx.tools.get` / `execute` with approval, token, agent, and signal context. Partial modern registration, denial, or cancellation cannot trigger legacy fallback; an operation does not switch families.
-- Production DesktopBridge cannot prove current-task ownership. Background scanning, automatic proxy redirects, background metadata capture, and forced presentation are disabled; enabled/configured mode is `tools-only`. Manual navigation requires explicit proxy tools. This is a safety change, not feature parity. Preserve provider policy limits, including plugin-wide restrict in representative `0.3.1` versus task-scoped restrict in `0.4.15`.
-- Registration evidence (`toolCompatibility`, including `providerVerified: false` and profile/task scope), `automaticMonitoring`, and `renaming.enabled` / `renaming.ready` / `renaming.mode` are separate. Settings-page profile scope is not a current-task guarantee.
-- Final clicks always recheck login/challenge and require explicit `clicked: true`; blocked pages are not touched again to force handoff. Clicks do not prove saved files.
-- Existing 0.1/0.2 settings remain compatible. Language/naming edits preserve proxy pending/loop-guard state; missing-`settings` POSTs are rejected, not resets.
-- Conservative renaming remains opt-in with an explicit local folder, observed temporary file, disappearance, matching final PDF stable for at least two seconds, maximum 64 MiB, prior unique metadata, and no overwrite. It is neither a native completion event nor support for every download.
-
-Do not include runtime settings, real institutional templates, actual user directory paths, credentials, cookies, browser endpoint details, personal PDFs, raw personal logs, or generated dependency folders in published source or artifacts. Keep synthetic validation fixtures clearly separate from private data.
+Do not include runtime settings, real institutional proxy templates, actual download-directory paths, credentials, cookie data, personal PDFs, screenshots containing private details, or generated dependency folders in a source publication. Private validation can use the intended environment, but published reports must redact those details.
 
 ## Build and inspect
 
@@ -36,32 +27,36 @@ npm pack --pack-destination dist
 npm pack --dry-run --json
 ```
 
-Reuse `dist` if it already exists. `npm pack` runs `prepack`, which repeats required checks and tests. The expected archive is `dist/dsh-academic-web-proxy-0.2.1.tgz`. Inspect the actual archive; record its integrity/hash, size, and file count from that artifact, not an earlier release. Final validation placeholders must be filled only after the source and artifact are frozen.
+If `dist` already exists, reuse it. `npm pack` runs `prepack`, which repeats the required check and tests. The expected archive is `dist/dsh-academic-web-proxy-0.2.0.tgz`. Inspect the actual archive contents and record its integrity/hash and file count from the produced artifact; do not copy values from an earlier release.
 
-The runtime payload should contain the manifest, runtime source, client entry, Cordis patch, documentation, license, and notice. Development test/check scripts and the source lockfile are not runtime payloads. Because `prepack` references source-only scripts, rebuild or publish from the complete source checkout rather than an extracted runtime tarball.
+The runtime package should include the manifest, source modules, client entry, Cordis patch, documentation, license, and notice. Development test/check scripts and the source lockfile are not runtime payloads. The package's `prepack` references source-only scripts, so rebuild or publish from the source checkout rather than trying to repack an extracted runtime tarball.
 
-An isolated npm install and host-contract smoke check using real SDK packages plus browser stubs must be labeled as such. It is not a live DSH CLI installation or real browser provider test. Keep final automated matrices, settings migration results, SDK/stub results, artifact inspection, and privacy review in [Validation](VALIDATION.md). Do not copy 0.2.0 counts or treat an in-progress run as passed.
+Install the actual archive into an isolated test profile using the host's normal plugin flow. Confirm the peer dependencies and PDF parser resolve and that the settings UI loads. Then perform the deployment checks in [Compatibility](COMPATIBILITY.md) on the intended browser and filesystem. Keep final automated results, pack inspection, install smoke results, privacy scan, and honest manual-test status in [Validation](VALIDATION.md). Keep the report aligned with the exact source and artifact being released, and distinguish an isolated npm/host-contract fixture from a real DSH CLI installation and live browser acceptance.
 
-Live host installation and browser/filesystem acceptance are separate, explicitly authorized work. Follow [Compatibility](COMPATIBILITY.md) only in that authorized environment; until exercised, settings-window rendering, SSO/CAPTCHA handoff, real saving, and provider behavior remain unverified. Local Windows results do not establish Linux/macOS behavior. CI workflow files are not successful hosted runs.
+A local Windows run does not establish Linux or macOS behavior. Configured CI jobs count as validation only after they run successfully. Live SSO, CAPTCHA handoff, browser saving, fast-download skips, and hard-link filesystem behavior must remain explicitly unverified if they were not exercised.
 
 ## Public source, npm, and release assets
 
-After review and authorization, publish the exact validated 0.2.1 source and create its new tag. Before npm publication, confirm permission to publish the exact package name. A public metadata lookup does not establish package ownership. The repository field must point to `https://github.com/Yokhong/dsh_academic_web_proxy`.
+Make the implemented source and accurate documentation publicly reviewable before submitting a catalog entry describing v0.2 features. The npm package is optional for catalog eligibility, but a prebuilt package improves installation. A catalog listing itself is not a security audit or a promise of acceptance.
 
-Publish npm `0.2.1` from the checked source through the maintainer's authorized release process, then verify the published version and payload before recommending the install command:
+Before npm publication, confirm that the publishing account owns or may publish the exact package name. `npm view dsh-academic-web-proxy` only queries availability of public metadata; a missing result does not prove ownership or the right to publish. The repository field in the published package must point back to `https://github.com/Yokhong/dsh_academic_web_proxy`. Publish the intended version from the checked source only when the release action is authorized.
 
-```sh
-dsh plugin --profile your-profile add dsh-academic-web-proxy@0.2.1
+If the npm name must change, update `package.json`, the matching package entry in `package-lock.json`, the Cordis bundle's package resolution name, and every install example together. The market does not require an npm name prefix or equality with the GitHub repository name; scoped packages can be discovered when their source manifest and published repository backlink are correct.
+
+A GitHub Release `.tgz` is an alternative distribution artifact. Upload the actual inspected archive and verify the public asset URL before documenting it. Do not invent an asset URL from a planned tag. A market `tarball` field is optional when source installation works, but required if the source cannot install. If using `/releases/latest/download/`, the asset basename must stay version-free; otherwise use the exact versioned tag URL. No tarball URL is included in the current draft without an uploaded asset.
+
+## Catalog submission
+
+A separately prepared `market_submission/` directory is maintainer handoff material, not part of the public source snapshot or runtime package. Do not copy that enclosing directory into the market repository. After public source supports the described behavior, prepare only:
+
+```text
+data/plugins/Yokhong__dsh_academic_web_proxy.yml
 ```
 
-If the npm name must change, update the manifest, matching lockfile package entry, Cordis bundle resolution name, and install examples together in a separately scoped change. A source repository name and npm name need not be identical.
+into an up-to-date checkout of `awesome-dsh-plugin/awesome-dsh-plugin`. The proposed category is `browser`. Submit only the entry; generated READMEs and npm mappings are maintained by the catalog. The catalog currently supports `description.en` and optional `description.zh` only, regardless of the plugin's three interface languages. Do not add `npm`, `version`, or extra locale keys.
 
-A GitHub Release `.tgz` is an alternative distribution artifact, not npm publication. Upload only the inspected archive and verify the actual asset URL before documenting it; do not invent a URL from a planned tag. A `/releases/latest/download/` URL needs a stable version-free asset basename; otherwise use the verified versioned asset URL. None of these actions occurs merely by running the local build steps.
+Recheck the public registry for duplicates, the public repository's age/topic, the current manifest, and the current contribution guide before submission. The repository needs real working code, its own `dsh.bundle`, a public age of at least one day, active maintenance, and the GitHub `dsh-plugin` topic. The current submission checker has no commit-count minimum. Passing CI is a precondition; maintainers still review code, descriptions, category, duplication, and source behavior.
 
-## Existing market entry
+Public sources: [contribution guide](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md), [entry validator](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/lib/entries.mjs), [submission checker](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/check-submission.mjs), [npm discovery](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/probe-npm.mjs), and [site generation](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/build-site.mjs).
 
-If the project already has a market entry, releasing a new package version normally does not require another entry or duplicate submission. If its original catalog PR is still open, continue that PR instead of submitting a duplicate. Update the existing entry only if its description or distribution URL genuinely needs to change, using the market's current contribution rules and a separate authorized change. In particular, any old automatic-monitoring promise should not remain in a description of 0.2.1.
-
-Do not treat a market listing as a security audit, npm publication, or live compatibility verification. A separate maintainer submission draft is not a published catalog change and should not be copied wholesale into the catalog. This work performs no market PR, registry change, release upload, or remote publication.
-
-Reference links for the maintainer's later release work: [project](https://github.com/Yokhong/dsh_academic_web_proxy), [market contribution guide](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md), and [npm discovery](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/probe-npm.mjs). These links were not used for new network research in this task.
+No remote publication, registry change, release upload, or pull request is performed by following the local preparation steps alone.

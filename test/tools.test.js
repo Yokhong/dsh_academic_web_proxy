@@ -33,7 +33,6 @@ function harness(responses = [], overrides = {}, downloads) {
   const queue = [...responses];
   const ctx = {
     tools: {
-      get(name) { return ['browser_open', 'browser_execute', 'browser_click'].includes(name) ? { name } : undefined; },
       register(tool) {
         assert.equal(tools.has(tool.name), false, `duplicate registration: ${tool.name}`);
         tools.set(tool.name, tool);
@@ -139,8 +138,7 @@ test('an already-aborted parent signal prevents any nested browser call', async 
 test('status reads monitor readiness without dispatching tools or exposing scheme strings', async () => {
   const h = harness([], { loginUrlScheme: 'https://login.example.edu/login?private-setting=secret&url=%u' });
   const result = await h.run('academic_proxy_status');
-  assert.deepEqual(result, { enabled: true, configured: true, mode: 'desktop-bridge', pending: [],
-    toolCompatibility: { mode: 'registered', prefix: 'browser_', available: ['open', 'execute', 'click'], missing: [], providerVerified: false, scope: 'task' } });
+  assert.deepEqual(result, { enabled: true, configured: true, mode: 'desktop-bridge', pending: [] });
   assert.doesNotMatch(JSON.stringify(result), /private-setting|proxy\.example|login\.example/);
   assert.equal(h.calls.length, 0);
 });
@@ -217,18 +215,17 @@ test('download follows the ordinary inspect, candidate, identity and click pipel
   const fetchMock = t.mock.method(globalThis, 'fetch', () => { throw new Error('direct fetch is forbidden'); });
   const h = harness([
     inspected(readyPage()), found([candidate(), candidate('#supplement', 1, 'PDF')]),
-    inspected(readyPage()), inspected(ARTICLE_URL), { value: { clicked: true } },
+    inspected(ARTICLE_URL), { value: { clicked: true } },
   ]);
   const result = await h.run('academic_proxy_download');
   assert.equal(result.status, 'clicked');
   assert.equal(result.label, 'Download article PDF');
   assert.match(result.message, /不代表文件已保存成功/);
-  assert.deepEqual(h.calls.map(call => call.name), ['browser_execute', 'browser_execute', 'browser_execute', 'browser_execute', 'browser_click']);
+  assert.deepEqual(h.calls.map(call => call.name), ['browser_execute', 'browser_execute', 'browser_execute', 'browser_click']);
   assert.equal(h.calls[0].arguments.script, INSPECT_PAGE_SCRIPT);
   assert.equal(h.calls[1].arguments.script, DOWNLOAD_CANDIDATES_SCRIPT);
-  assert.equal(h.calls[2].arguments.script, INSPECT_PAGE_SCRIPT);
-  assert.deepEqual(h.calls[3].arguments, { script: 'location.href' });
-  assert.deepEqual(h.calls[4].arguments, { target: { by: 'css', value: '#download-pdf' } });
+  assert.deepEqual(h.calls[2].arguments, { script: 'location.href' });
+  assert.deepEqual(h.calls[3].arguments, { target: { by: 'css', value: '#download-pdf' } });
   assert.equal(fetchMock.mock.callCount(), 0);
   assert.equal(h.queue.length, 0);
   assertNestedContext(h);
@@ -239,11 +236,11 @@ test('download registry denials from both inspection and the final click propaga
   await assert.rejects(() => inspection.run('academic_proxy_download'), /inspection blocked by policy/);
   assert.equal(inspection.calls.length, 1);
   const click = harness([
-    inspected(readyPage()), found([candidate()]), inspected(readyPage()), inspected(ARTICLE_URL),
+    inspected(readyPage()), found([candidate()]), inspected(ARTICLE_URL),
     { isError: true, content: [{ type: 'text', text: 'click approval denied' }] },
   ]);
   await assert.rejects(() => click.run('academic_proxy_download'), /click approval denied/);
-  assert.equal(click.calls.length, 5);
+  assert.equal(click.calls.length, 4);
   assertNestedContext(click);
 });
 
@@ -306,9 +303,9 @@ test('ambiguous top scores require a choice, and no controls reports no-control-
 
 test('an explicit selector may choose a returned control but cannot introduce an arbitrary selector', async () => {
   const candidates = [candidate('#pdf-a'), candidate('#pdf-b')];
-  const chosen = harness([inspected(readyPage()), found(candidates), inspected(readyPage()), inspected(ARTICLE_URL), { value: { clicked: true } }]);
+  const chosen = harness([inspected(readyPage()), found(candidates), inspected(ARTICLE_URL), { value: {} }]);
   assert.equal((await chosen.run('academic_proxy_download', { selector: '#pdf-b' })).status, 'clicked');
-  assert.equal(chosen.calls[4].arguments.target.value, '#pdf-b');
+  assert.equal(chosen.calls[3].arguments.target.value, '#pdf-b');
   const unlisted = harness([inspected(readyPage()), found(candidates)]);
   const result = await unlisted.run('academic_proxy_download', { selector: 'button.delete-account' });
   assert.equal(result.status, 'choose-control');
@@ -316,7 +313,7 @@ test('an explicit selector may choose a returned control but cannot introduce an
 });
 
 test('a page change after candidate discovery prevents the final click', async () => {
-  const h = harness([inspected(readyPage()), found([candidate()]), inspected(readyPage({ url: 'https://user-selected.example/new-page' }))]);
+  const h = harness([inspected(readyPage()), found([candidate()]), inspected('https://user-selected.example/new-page')]);
   await assert.rejects(() => h.run('academic_proxy_download'), /页面已改变/);
   assert.deepEqual(h.calls.map(call => call.name), ['browser_execute', 'browser_execute', 'browser_execute']);
 });
@@ -336,9 +333,9 @@ test('failed candidate extraction and identity reads cannot trigger a click', as
     await assert.rejects(() => h.run('academic_proxy_download'), /browser_a11y/);
     assert.equal(h.calls.length, 2);
   }
-  const h = harness([inspected(readyPage()), found([candidate()]), inspected(readyPage()), { value: { exception: 'navigated' } }]);
+  const h = harness([inspected(readyPage()), found([candidate()]), { value: { exception: 'navigated' } }]);
   await assert.rejects(() => h.run('academic_proxy_download'), /页面已改变/);
-  assert.equal(h.calls.length, 4);
+  assert.equal(h.calls.length, 3);
 });
 
 function element({ id = '', tag = 'BUTTON', label = '', attributes = {}, visible = true, style = {}, disabled = false, hidden = false } = {}) {
@@ -445,28 +442,18 @@ test('serialized candidate extraction constructs exact structural selectors and 
 });
 
 
-test('login inspection stops immediately without marking or binding the blocked page', async () => {
+test('native JSON-string object and boolean results bind the current login page', async () => {
   const page = readyPage({ kind: 'login' });
-  const environment = harness([inspected(page)]);
-  environment.monitor.trackCurrent = async () => { throw new Error('blocked pages must not be tracked'); };
-  const result = await environment.run('academic_proxy_check');
-  assert.equal(result.humanRequired, true);
-  assert.deepEqual(result.page, page);
-  assert.equal(environment.calls.length, 1);
-});
-
-test('native JSON-string object and boolean results bind a ready page only with task isolation', async () => {
-  const page = readyPage();
-  const environment = harness([inspected(page), inspected(true)]);
+  const h = harness([inspected(page), inspected(true)]);
   const tracked = [];
-  environment.monitor.trackCurrent = async (...args) => tracked.push(args);
-  const result = await environment.run('academic_proxy_check');
-  assert.equal(result.humanRequired, false);
+  h.monitor.trackCurrent = async (...args) => tracked.push(args);
+  const result = await h.run('academic_proxy_check');
+  assert.equal(result.humanRequired, true);
   assert.deepEqual(result.page, page);
   assert.equal(tracked.length, 1);
   assert.match(tracked[0][0], /^[a-f0-9-]{36}$/);
   assert.deepEqual(tracked[0][1], page);
-  assert.match(environment.calls[1].arguments.script, /Symbol.for/);
+  assert.match(h.calls[1].arguments.script, /Symbol.for/);
 });
 
 test('native browser_execute ok=false never becomes a successful page inspection', async () => {

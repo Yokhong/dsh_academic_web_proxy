@@ -162,8 +162,6 @@ test('disabled and directory changes cancel in-progress rename eligibility', asy
   assert.deepEqual(await readdir(environment.directory), ['download.pdf']);
   environment.config.downloadDirectory = ''; environment.config.renameEnabled = true; await environment.monitor.tick();
   assert.equal(environment.monitor.status().mode, 'needs-directory');
-  assert.equal(environment.monitor.status().enabled, true);
-  assert.equal(environment.monitor.status().ready, false);
   environment.config.downloadDirectory = join(environment.directory, 'absent'); await environment.monitor.tick();
   assert.equal(environment.monitor.status().mode, 'directory-unavailable');
   assert.doesNotMatch(JSON.stringify(environment.monitor.status()), /absent|rename-/);
@@ -172,13 +170,9 @@ test('disabled and directory changes cancel in-progress rename eligibility', asy
 test('no rename occurs after stop or during browser restrictions', async context => {
   let allowed = true;
   const environment = await fixture(context, { allowed: () => allowed });
-  await environment.begin();
-  assert.equal(environment.monitor.status().ready, true);
-  allowed = false; await environment.complete();
-  assert.equal(environment.monitor.status().ready, false);
+  await environment.begin(); allowed = false; await environment.complete();
   assert.deepEqual(await readdir(environment.directory), ['download.pdf']);
   await environment.monitor.stop(); allowed = true; await environment.monitor.tick();
-  assert.equal(environment.monitor.status().ready, false);
   assert.deepEqual(await readdir(environment.directory), ['download.pdf']);
 });
 
