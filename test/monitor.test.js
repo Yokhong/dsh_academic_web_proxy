@@ -20,6 +20,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 
 class FakeBridge {
   constructor(guests = []) {
+    this.taskScoped = true;
     this.guests = guests.map(value => ({ ...value }));
     this.pages = new Map();
     this.calls = [];
@@ -66,6 +67,80 @@ function setup(guests = [], overrides = {}, options = {}) {
   const monitor = new ProxyMonitor({ bridge, settings: () => config, ...options });
   return { bridge, monitor, updateSettings: next => { config = settings(next); monitor.configure(); } };
 }
+
+test('startup and all monitoring entry points refuse unproven task scope without bridge calls', async () => {
+  const source = 'https://dl.acm.org/article';
+  for (const taskScoped of [false, undefined, null, 'true', 1]) {
+    for (const ownerTaskId of ['current-task', 'another-task', undefined]) {
+      const { bridge, monitor } = setup([guest(1, source, {
+        ownerTaskId, active: true, visible: true, profileOrigin: 'http://127.0.0.1:54321',
+      })], {}, { intervalMs: 60_000 });
+      bridge.taskScoped = taskScoped;
+      try {
+        monitor.start();
+        await settle();
+        await monitor.tick();
+        await monitor.trackCurrent('marker', { url: source }, source);
+        await monitor.scanTab(bridge.find(1));
+        monitor.pending.set(1, { id: 1, kind: 'login' });
+        assert.deepEqual(await monitor.present(1), { presented: false, reason: 'task-scope-unverified' });
+        assert.equal(monitor.status().mode, 'tools-only');
+        assert.deepEqual(monitor.status().automaticMonitoring, { mode: 'tools-only', taskScoped: false });
+        assert.deepEqual(bridge.calls, []);
+      } finally { await monitor.stop(); }
+    }
+  }
+});
+
+test('unproven scope retains disabled, unconfigured and restricted modes without discovery', async () => {
+  for (const [overrides, mode] of [[{ enabled: false }, 'disabled'], [{ proxiedUrlScheme: '' }, 'unconfigured'], [{}, 'restricted']]) {
+    const { bridge, monitor } = setup([guest(1, 'https://dl.acm.org/article')], overrides);
+    bridge.taskScoped = false;
+    monitor.restricted = mode === 'restricted';
+    await monitor.tick();
+    await monitor.trackCurrent('marker', { url: bridge.find(1).url });
+    assert.equal(monitor.status().mode, mode);
+    assert.deepEqual(monitor.status().automaticMonitoring, { mode, taskScoped: false });
+    assert.deepEqual(bridge.calls, []);
+  }
+});
+
+test('a busy monitor still reports tools-only when task scope is unproven', async () => {
+  const { bridge, monitor } = setup([guest(1, 'https://dl.acm.org/article')]);
+  bridge.taskScoped = false;
+  monitor.busy = 1;
+  await monitor.tick();
+  assert.equal(monitor.status().mode, 'tools-only');
+  assert.deepEqual(bridge.calls, []);
+});
+
+test('task scope revoked at any awaited bridge read prevents subsequent monitoring operations', async () => {
+  for (const operation of ['discover', 'list', 'evaluate']) {
+    const { bridge, monitor } = setup([guest(1, 'https://dl.acm.org/article')]);
+    bridge[`${operation}Impl`] = async () => {
+      bridge.taskScoped = false;
+      if (operation === 'discover') return true;
+      if (operation === 'list') return bridge.guests;
+      return bridge.find(1).url;
+    };
+    await monitor.tick();
+    assert.deepEqual(bridge.calls.map(call => call.name), ['discover', 'list', 'evaluate'].slice(0, ['discover', 'list', 'evaluate'].indexOf(operation) + 1));
+    assert.equal(monitor.tabs.size, 0);
+    assert.equal(monitor.pending.size, 0);
+    await monitor.tick();
+    assert.equal(monitor.status().mode, 'tools-only');
+  }
+});
+
+test('task scope revoked during marker lookup cannot track or present any guest', async () => {
+  const url = 'https://institution-sso.example/login';
+  const { bridge, monitor } = setup([guest(1, url)]);
+  bridge.evaluateImpl = async () => { bridge.taskScoped = false; return url; };
+  await monitor.trackCurrent('marker', { url }, 'https://dl.acm.org/article');
+  assert.deepEqual(bridge.calls.map(call => call.name), ['discover', 'list', 'evaluate']);
+  assert.equal(monitor.tabs.size, 0);
+  assert.equal(monitor.pending.size, 0);
+});
 
 test('background metadata uses the current proxy host and never blocked pages', async () => {
   const captured = [];
@@ -321,6 +396,98 @@ test('manual presentation accepts only pending guests and reports an unconfirmed
   bridge.presentImpl = async id => ({ presented: true, id });
   assert.deepEqual(await monitor.present(4), { presented: true, id: 4 });
   assert.equal(monitor.status().pending[0].presented, true);
+});
+
+test('unchanged proxy rules preserve the generation, pending handoff and cooldown state', async () => {
+  const { bridge, monitor, updateSettings } = setup([guest(1, 'https://dl.acm.org/article')], {
+    customHostnames: ['papers-b.example', 'papers-a.example'],
+  });
+  await monitor.tick();
+  bridge.setPage(1, { kind: 'challenge' });
+  await monitor.tick();
+  const generation = monitor.generation;
+  const tracked = monitor.tabs.get(1), pending = monitor.pending.get(1);
+  const cooldown = [...monitor.guard.entries];
+  updateSettings({ customHostnames: ['papers-a.example', 'PAPERS-B.EXAMPLE', 'papers-a.example'] });
+  assert.equal(monitor.generation, generation);
+  assert.equal(monitor.tabs.get(1), tracked);
+  assert.equal(monitor.pending.get(1), pending);
+  assert.deepEqual([...monitor.guard.entries], cooldown);
+  monitor.configure();
+  assert.equal(monitor.generation, generation);
+});
+
+test('language and download-only saves preserve returned-source challenges and external SSO handoffs', async () => {
+  const source = 'https://dl.acm.org/article';
+  for (const [url, kind] of [[source, 'challenge'], ['https://institution-sso.example/login', 'login']]) {
+    let now = 1000;
+    const { bridge, monitor, updateSettings } = setup([guest(1, source)], {}, { now: () => now });
+    await monitor.tick();
+    bridge.setPage(1, { url, kind });
+    await monitor.tick();
+    const generation = monitor.generation;
+    const tracked = monitor.tabs.get(1);
+    const cooldown = [...monitor.guard.entries];
+    for (const overrides of [
+      { language: 'en-US' },
+      { renameEnabled: true },
+      { namingFields: ['title'] },
+      { downloadDirectory: 'C:\\isolated-test-downloads' },
+      {},
+    ]) {
+      const pending = monitor.pending.get(1);
+      updateSettings(overrides);
+      assert.equal(monitor.generation, generation);
+      assert.equal(monitor.tabs.get(1), tracked);
+      assert.equal(monitor.pending.get(1), pending);
+      assert.deepEqual([...monitor.guard.entries], cooldown);
+      now += 11 * 60_000;
+      await monitor.tick();
+      assert.equal(monitor.status().pending[0].kind, kind);
+      assert.equal(bridge.callsOf('navigate').length, 1);
+      assert.equal(bridge.callsOf('present').length, 1);
+    }
+  }
+});
+
+test('each actual proxy rule change clears state and advances the generation once', async () => {
+  for (const overrides of [
+    { enabled: false }, { useDefaultHostnames: false }, { customHostnames: ['new.example'] },
+    { loginUrlScheme: 'https://login.example.edu/login?url=%u' },
+    { proxiedUrlScheme: '%h.other-proxy.example.edu/%p' },
+  ]) {
+    const { bridge, monitor, updateSettings } = setup([guest(1, 'https://dl.acm.org/article')]);
+    await monitor.tick();
+    bridge.setPage(1, { kind: 'challenge' });
+    await monitor.tick();
+    const generation = monitor.generation;
+    assert.equal(monitor.tabs.size, 1);
+    assert.equal(monitor.pending.size, 1);
+    assert.equal(monitor.guard.entries.size, 1);
+    updateSettings(overrides);
+    assert.equal(monitor.generation, generation + 1);
+    assert.equal(monitor.tabs.size, 0);
+    assert.equal(monitor.pending.size, 0);
+    assert.equal(monitor.guard.entries.size, 0);
+    updateSettings(overrides);
+    assert.equal(monitor.generation, generation + 1);
+  }
+});
+
+test('a non-rule save does not invalidate an in-flight safe page recheck', async () => {
+  const source = 'https://dl.acm.org/article';
+  const { bridge, monitor, updateSettings } = setup([guest(1, source)]);
+  const pending = deferred();
+  bridge.evaluateImpl = () => pending.promise;
+  const tick = monitor.tick();
+  await settle();
+  const generation = monitor.generation;
+  updateSettings({ language: 'en-US', renameEnabled: true });
+  assert.equal(monitor.generation, generation);
+  assert.equal(monitor.rules.settings.language, 'en-US');
+  pending.resolve(source);
+  await tick;
+  assert.equal(bridge.callsOf('navigate').length, 1);
 });
 
 test('closed guests and reconfiguration clean tracked, pending and cooldown state', async () => {

@@ -527,7 +527,7 @@ test('custom domain edits work independently when defaults and global proxy are 
 });
 
 test('all known proxy runtime modes use the selected local dictionary instead of server messages', async t => {
-  const modes = { starting: 'modeStarting', restricted: 'modeRestricted', unconfigured: 'modeUnconfigured', disabled: 'modeDisabled', unavailable: 'modeUnavailable', 'desktop-bridge': 'modeDesktop' };
+  const modes = { starting: 'modeStarting', restricted: 'modeRestricted', unconfigured: 'modeUnconfigured', disabled: 'modeDisabled', unavailable: 'modeUnavailable', 'desktop-bridge': 'modeDesktop', 'tools-only': 'modeToolsOnly' };
   let currentStatus = { mode: 'starting', message: '服务器中文状态原文' };
   const env = setup(call => response(call.url.endsWith('/status') ? currentStatus : envelope(defaults(), 0, currentStatus)));
   t.after(() => { env.controller.dispose(); env.loaded.dispose(); });
@@ -571,6 +571,29 @@ test('renaming status renders only backend readiness and valid pending counts in
     await env.controller.refreshStatus();
     assert.doesNotMatch(text(render(env.loaded, env.controller)), /Pending downloads:/);
   }
+});
+
+test('tool registration, automatic mode and paused renaming stay distinct in every language', async context => {
+  let currentStatus = { mode: 'tools-only', toolCompatibility: { mode: 'registered', prefix: 'dsh_browser_', scope: 'profile', providerVerified: false }, renaming: { mode: 'ready', ready: false, pending: 0 } };
+  const environment = setup(call => response(call.url.endsWith('/status') ? currentStatus : envelope(defaults(), 0, currentStatus)));
+  context.after(() => { environment.controller.dispose(); environment.loaded.dispose(); });
+  await environment.controller.load();
+  render(environment.loaded, environment.controller);
+  for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+    environment.controller.edit('language', language);
+    const dictionary = environment.loaded.dictionaries()[language];
+    for (const [mode, key] of Object.entries({ registered: 'toolRegistered', partial: 'toolPartial', unavailable: 'toolUnavailable' })) {
+      currentStatus = { ...currentStatus, toolCompatibility: { ...currentStatus.toolCompatibility, mode } };
+      await environment.controller.refreshStatus();
+      const content = text(render(environment.loaded, environment.controller));
+      for (const label of [key, 'modeToolsOnlyHint', 'toolStatus', 'toolScopeProfile', 'toolUnverified', 'renamingPaused']) assert.ok(content.includes(dictionary[label]), language + ' ' + label);
+      assert.ok(content.includes('dsh_browser_*'));
+      assert.equal(content.includes(dictionary.renamingReady), false);
+    }
+  }
+  currentStatus = { mode: 'tools-only', toolCompatibility: { mode: 'registered', prefix: 'browser_', scope: 'task', providerVerified: false } };
+  await environment.controller.refreshStatus();
+  assert.ok(text(render(environment.loaded, environment.controller)).includes(environment.loaded.dictionaries()['en-US'].toolScopeTask));
 });
 
 test('unknown backend status data stays useful while URL secrets remain masked', async t => {

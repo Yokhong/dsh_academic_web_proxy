@@ -38,6 +38,25 @@ test('version 0.1 settings migrate safely to disabled naming and an independent 
   }
 });
 
+test('version 0.2 settings retain language, naming choices and revision without rewriting', async context => {
+  const { filePath, directory } = await fixture(context);
+  const legacy = {
+    ...DEFAULT_SETTINGS, enabled: true, useDefaultHostnames: false,
+    customHostnames: ['journals.example.org'], loginUrlScheme: login,
+    proxiedUrlScheme: 'https://%h.proxy.example.edu/%p', language: 'zh-TW',
+    renameEnabled: true, namingFields: ['author', 'year', 'venue'], downloadDirectory: directory,
+  };
+  const original = JSON.stringify({ version: 1, revision: 12, settings: legacy });
+  await writeFile(filePath, original);
+  const store = new SettingsStore({ filePath });
+  assert.deepEqual(await store.load(), legacy);
+  assert.equal(store.revision, 12);
+  assert.equal(await readFile(filePath, 'utf8'), original);
+  const saved = await store.save({ ...store.get(), language: 'en-US' }, { revision: 12 });
+  assert.equal(saved.revision, 13);
+  assert.deepEqual(await new SettingsStore({ filePath }).load(), { ...legacy, language: 'en-US' });
+});
+
 test('new settings reject invalid language, naming fields and nonlocal paths', () => {
   for (const input of [{ language: 'en' }, { renameEnabled: 'true' }, { namingFields: ['doi'] }, { namingFields: ['title', 'title'] }, { namingFields: null }, { downloadDirectory: 'relative/path' }, { downloadDirectory: 'https://example.org/downloads' }, { downloadDirectory: '//server/share' }, { downloadDirectory: 42 }]) {
     assert.throws(() => validateSettings(input));

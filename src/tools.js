@@ -2,10 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { ProxyRules } from './proxy.js';
 import { INSPECT_PAGE_SCRIPT, DOWNLOAD_CANDIDATES_SCRIPT } from './page-scripts.js';
 import { extractPaperMetadata } from './paper-metadata.js';
+import { browserToolStatus, resolveBrowserTool } from './browser-tools.js';
+
+const browserFamilies = new WeakMap();
 
 /** Nested calls always enter the host registry: approvals, restrictions and cancellation remain effective. */
 export async function callBrowser(ctx, exec, name, args) {
   exec.signal.throwIfAborted();
+  name = resolveBrowserTool(ctx, exec.agent, name);
+  const family = name.startsWith('dsh_browser_') ? 'dsh_browser_' : 'browser_';
+  const previous = browserFamilies.get(exec);
+  if (previous && previous !== family) throw new Error('浏览器工具配置已改变，请重新检查当前任务页面；不会在同一操作中切换浏览器。');
+  browserFamilies.set(exec, family);
   const result = await ctx.tools.execute({
     callId: `${exec.callId}:academic:${randomUUID()}`, rootCallId: exec.rootCallId,
     parent: exec.token, agent: exec.agent, signal: exec.signal, name, arguments: args,
@@ -28,13 +36,13 @@ export function registerAcademicTools(ctx, { monitor, downloads, settings, defin
     try { return JSON.parse(result.value); } catch { throw new Error(message); }
   };
   const inspect = async exec => {
-    const message = '未能读取当前页面，请先使用 browser_snapshot 检查浏览器。';
+    const message = '未能读取当前页面，请先使用 dsh_browser_snapshot / browser_snapshot 检查浏览器。';
     const page = await executeJson(exec, INSPECT_PAGE_SCRIPT, message);
     if (!page || typeof page.url !== 'string' || !['ready', 'login', 'challenge'].includes(page.kind)) throw new Error(message);
     return page;
   };
   const track = async (exec, page, source) => {
-    if (!monitor.trackCurrent) return;
+    if (!monitor.trackCurrent || page.kind !== 'ready' || monitor.status().automaticMonitoring?.taskScoped === false) return;
     const marker = randomUUID();
     const script = `(() => { if (location.href !== ${JSON.stringify(page.url)}) return false; Object.defineProperty(globalThis, Symbol.for('dsh-academic-web-proxy:page-marker'), { value: ${JSON.stringify(marker)}, configurable: true }); return true; })()`;
     const marked = await executeJson(exec, script, '当前页面已改变，无法绑定原标签。');
@@ -44,9 +52,9 @@ export function registerAcademicTools(ctx, { monitor, downloads, settings, defin
     name: 'academic_proxy_status',
     description: 'Read academic proxy readiness and pending login/CAPTCHA pages. Does not reveal proxy scheme strings or login input values.',
     parameters: {}, isConcurrencySafe: () => true,
-    async execute() {
+    async execute(_args, exec) {
       const config = settings();
-      return { enabled: config.enabled, configured: Boolean(config.loginUrlScheme || config.proxiedUrlScheme), ...monitor.status() };
+      return { enabled: config.enabled, configured: Boolean(config.loginUrlScheme || config.proxiedUrlScheme), ...monitor.status(), toolCompatibility: browserToolStatus(ctx, exec?.agent) };
     },
   });
   register({
@@ -103,25 +111,23 @@ export function registerAcademicTools(ctx, { monitor, downloads, settings, defin
         if (metadata?.pageUrl !== page.url) throw new Error('页面已改变，请重新检查论文与下载控件。');
         metadataCaptured = downloads.remember(metadata);
       }
-      const found = await executeJson(exec, DOWNLOAD_CANDIDATES_SCRIPT, '无法读取下载控件，请使用 browser_a11y 检查页面。');
-      if (!found || !Array.isArray(found.candidates) || typeof found.url !== 'string') throw new Error('无法读取下载控件，请使用 browser_a11y 检查页面。');
+      const found = await executeJson(exec, DOWNLOAD_CANDIDATES_SCRIPT, '无法读取下载控件，请使用 dsh_browser_a11y / browser_a11y 检查页面。');
+      if (!found || !Array.isArray(found.candidates) || typeof found.url !== 'string') throw new Error('无法读取下载控件，请使用 dsh_browser_a11y / browser_a11y 检查页面。');
       const { candidates, framesPresent, url } = found;
       if (url !== page.url) throw new Error('页面已改变，请重新检查登录状态与下载控件。');
       if (args.inspectOnly) return { status: 'candidates', candidates, framesPresent, ...(downloads?.enabled() ? { metadataCaptured, renaming: downloads.status() } : {}) };
       const chosen = args.selector ? candidates.find(candidate => candidate.selector === args.selector) : candidates[0];
       if (!chosen || !args.selector && candidates[1]?.score === chosen.score) {
-        return { status: candidates.length ? 'choose-control' : 'no-control-found', candidates, framesPresent, message: '请用 browser_a11y 核对页面上的真实 PDF/下载按键。若有多个候选，请传入本次返回的 selector；跨域 iframe 使用浏览器工具定位。' };
+        return { status: candidates.length ? 'choose-control' : 'no-control-found', candidates, framesPresent, message: '请用 dsh_browser_a11y / browser_a11y 核对页面上的真实 PDF/下载按键。若有多个候选，请传入本次返回的 selector；跨域 iframe 使用浏览器工具定位。' };
       }
       // Check page identity immediately before the ordinary browser_click dispatch.
-      if (downloads?.enabled()) {
-        const latest = await inspect(exec);
-        if (latest.url !== page.url) throw new Error('页面已改变，请重新检查论文与下载控件。');
-        if (latest.kind !== 'ready') return { status: 'human-required', kind: latest.kind, message: '请在原页面完成人工操作。', browser: monitor.status() };
-      }
+      const latest = await inspect(exec);
+      if (latest.url !== page.url) throw new Error('页面已改变，请重新检查论文与下载控件。');
+      if (latest.kind !== 'ready') return { status: 'human-required', kind: latest.kind, message: '请在原页面完成人工操作。', browser: monitor.status() };
       const current = await callBrowser(ctx, exec, 'browser_execute', { script: 'location.href' });
       if (current?.ok !== true || current.value !== url) throw new Error('页面已改变，请重新检查下载控件。');
       const clicked = await callBrowser(ctx, exec, 'browser_click', { target: { by: 'css', value: chosen.selector } });
-      if (clicked?.clicked === false) throw new Error('浏览器未能点击该下载控件，请重新检查页面。');
+      if (clicked?.clicked !== true) throw new Error('浏览器未能点击该下载控件，请重新检查页面。');
       return { status: 'clicked', label: chosen.label, ...(downloads?.enabled() ? { metadataCaptured, renaming: downloads.status() } : {}), message: '已点击页面上的真实下载按键。请检查浏览器下载记录或弹出的 PDF 标签页；此状态不代表文件已保存成功，也不代表已经重命名。' };
     },
   });
